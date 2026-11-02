@@ -118,11 +118,12 @@ def _show_result(result: TaskResult) -> None:
     print(f"\033[92mРезультат выполнения: {result}\033[0m")
 
 
-def _show_condition(task_name: str, condition: str) -> None:
-    print(
-        f"\033[93mВыполняется заглушка для задачи «{task_name}» "
-        f"с условием: {condition}\033[0m"
-    )
+def _show_condition(task_name: str, condition: str, is_stub: bool = True) -> None:
+    if is_stub:
+        message = f"Выполняется заглушка для задачи «{task_name}» с условием: {condition}"
+    else:
+        message = f"Условие задачи «{task_name}»: {condition}"
+    print(f"\033[93m{message}\033[0m")
 
 
 def main() -> None:
@@ -228,6 +229,7 @@ def main() -> None:
                 _show_condition(
                     "Транспортная задача",
                     describe_transport_problem(costs, supply, demand),
+                    is_stub=False,
                 )
                 result = solve_transport(costs, supply, demand)
             else:
