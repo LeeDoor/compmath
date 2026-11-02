@@ -1,6 +1,7 @@
 """Пример запуска и отображения задачи."""
 
 from linear_programming.artificial_basis import solve_artificial_basis
+from linear_programming.canonical_form import to_canonical_form
 from linear_programming.display_augmented_matrix import display_augmented_matrix
 from linear_programming.display_max import display_max
 from linear_programming.display_min import display_min
@@ -9,6 +10,7 @@ from linear_programming.optimality import check_optimality
 from linear_programming.primal_dual import solve_primal_dual
 from linear_programming.problem import create_problem
 from linear_programming.simplex import solve_simplex
+from linear_programming.standard_form import to_standard_form
 from linear_programming.transport import solve_transport
 
 
@@ -34,6 +36,8 @@ def main() -> None:
             "\n4. Двойственный симплекс-метод"
             "\n5. Метод искусственного базиса"
             "\n6. Проверка на оптимальность"
+            "\n7. Каноническая форма"
+            "\n8. Стандартная форма"
             "\n0. Выход"
         )
         try:
@@ -66,15 +70,44 @@ def main() -> None:
             tasks = {
                 1: (
                     "Одновременное решение прямой и двойственной задач",
-                    lambda: solve_primal_dual(problem),
+                    lambda: solve_primal_dual(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
                 ),
-                2: ("Симплекс-метод", lambda: solve_simplex(problem)),
+                2: (
+                    "Симплекс-метод",
+                    lambda: solve_simplex(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
+                ),
                 3: (
                     "Транспортная задача",
                     lambda: solve_transport([[2, 3], [4, 1]], [20, 30], [25, 25]),
                 ),
-                4: ("Двойственный симплекс-метод", lambda: solve_dual_simplex(problem)),
-                5: ("Метод искусственного базиса", lambda: solve_artificial_basis(problem)),
+                4: (
+                    "Двойственный симплекс-метод",
+                    lambda: solve_dual_simplex(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
+                ),
+                5: (
+                    "Метод искусственного базиса",
+                    lambda: solve_artificial_basis(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
+                ),
+                7: (
+                    "Приведение к канонической форме",
+                    lambda: to_canonical_form(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
+                ),
+                8: (
+                    "Приведение к стандартной форме",
+                    lambda: to_standard_form(
+                        problem.A, problem.b, problem.c, problem.sense
+                    ),
+                ),
             }
             task = tasks.get(choice)
             if task is None:

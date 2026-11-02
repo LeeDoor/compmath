@@ -14,8 +14,9 @@
 - `display_matrix.py`, `display_augmented_matrix.py` — вывод матриц.
 - `display_function.py`, `display_max.py`, `display_min.py` — формирование и вывод целевых функций.
 - `simplex.py`, `dual_simplex.py`, `artificial_basis.py`, `transport.py`, `primal_dual.py`, `optimality.py` — отдельный файл для каждого алгоритма.
+- `canonical_form.py`, `standard_form.py` — отдельные точки входа для приведения задачи к канонической и стандартной формам.
 
-Функции алгоритмов уже имеют согласованные точки входа, но намеренно оставлены незаполненными: их реализацию можно добавить в соответствующие функции, не меняя модули отображения и создания задачи. Матрицы хранятся как `numpy.matrix`, а для точного отображения используются объекты SymPy.
+Четыре метода решения СЛАУ с целевой функцией принимают `A`, `b`, коэффициенты `c` и направление `sense` (`"max"` или `"min"`), а после реализации должны возвращать вектор решения (`numpy.matrix`). Методы преобразования форм и алгоритмы намеренно оставлены незаполненными, чтобы их можно было реализовать по правилам вашего курса. Матрицы задачи хранятся как `numpy.matrix`, а для точного отображения используются объекты SymPy.
 
 ## Подготовка задачи
 
@@ -23,13 +24,8 @@
 from linear_programming.problem import create_problem
 from linear_programming.simplex import solve_simplex
 
-problem = create_problem(
-    A=[[1, 1], [2, 1]],
-    b=[4, 5],
-    c=[3, 2],
-    sense="max",
-)
+problem = create_problem(A=[[1, 1], [2, 1]], b=[4, 5], c=[3, 2], sense="max")
 
 # После реализации метода:
-# solve_simplex(problem)
+# solution = solve_simplex(problem.A, problem.b, problem.c, problem.sense)
 ```
