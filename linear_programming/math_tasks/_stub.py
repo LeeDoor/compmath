@@ -25,6 +25,5 @@ def describe_transport_problem(
 
 
 def run_stub(task_name: str, condition: str) -> str:
-    """Напечатать условие заглушки и вернуть текстовый ответ-заглушку."""
-    print(f"Выполняется заглушка для задачи «{task_name}» с условием: {condition}")
+    """Вернуть текстовый ответ-заглушку."""
     return f"Заглушка для задачи «{task_name}»: решение пока не реализовано."

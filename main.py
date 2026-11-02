@@ -10,6 +10,10 @@ from linear_programming.display_methods.display_min import display_min
 from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
 from linear_programming.math_tasks.canonical_form import to_canonical_form
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
+from linear_programming.math_tasks._stub import (
+    describe_linear_problem,
+    describe_transport_problem,
+)
 from linear_programming.math_tasks.optimality import check_optimality
 from linear_programming.math_tasks.primal_dual import solve_primal_dual
 from linear_programming.math_tasks.simplex import solve_simplex
@@ -114,6 +118,13 @@ def _show_result(result: TaskResult) -> None:
     print(f"\033[92mРезультат выполнения: {result}\033[0m")
 
 
+def _show_condition(task_name: str, condition: str) -> None:
+    print(
+        f"\033[93mВыполняется заглушка для задачи «{task_name}» "
+        f"с условием: {condition}\033[0m"
+    )
+
+
 def main() -> None:
     input_cache: dict[str, object] = {}
     linear_tasks: dict[int, tuple[str, Callable[[LinearProblem], TaskResult]]] = {
@@ -196,8 +207,14 @@ def main() -> None:
                     solution = _read_number_list(
                         "Введите компоненты найденного вектора решения через запятую: "
                     )
+                    condition = (
+                        f"{describe_linear_problem(problem)}, "
+                        f"вектор решения={solution}"
+                    )
+                    _show_condition(task_name, condition)
                     result = check_optimality(problem, solution)
                 else:
+                    _show_condition(task_name, describe_linear_problem(problem))
                     result = linear_tasks[choice][1](problem)
             elif choice == 3:
                 print("Выбрана задача: Транспортная задача")
@@ -208,6 +225,10 @@ def main() -> None:
                     _read_transport_problem,
                 )
                 costs, supply, demand = transport_input
+                _show_condition(
+                    "Транспортная задача",
+                    describe_transport_problem(costs, supply, demand),
+                )
                 result = solve_transport(costs, supply, demand)
             else:
                 print("Ошибка: такого пункта меню нет.")
