@@ -1,8 +1,15 @@
 """Решение транспортной задачи."""
 
+import numpy.typing as npt
 
-def solve_transport(costs: object, supply: object, demand: object) -> None:
+from ._stub import describe_transport_problem, run_stub
+
+
+def solve_transport(
+    costs: npt.ArrayLike, supply: npt.ArrayLike, demand: npt.ArrayLike
+) -> str:
     """Решить транспортную задачу по матрице тарифов, запасам и потребностям."""
-    raise NotImplementedError(
-        "Транспортная задача пока не реализована: добавьте алгоритм в solve_transport."
+    return run_stub(
+        "транспортная задача",
+        describe_transport_problem(costs, supply, demand),
     )

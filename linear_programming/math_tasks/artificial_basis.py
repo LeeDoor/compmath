@@ -1,9 +1,9 @@
 """Метод искусственного базиса."""
 
-import numpy as np
 import numpy.typing as npt
 
 from ..problem import Sense, create_problem
+from ._stub import describe_linear_problem, run_stub
 
 
 def solve_artificial_basis(
@@ -11,10 +11,7 @@ def solve_artificial_basis(
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
-) -> np.matrix:
+) -> str:
     """Решить СЛАУ с целевой функцией методом искусственного базиса."""
-    create_problem(A, b, c, sense)
-    raise NotImplementedError(
-        "Метод искусственного базиса пока не реализован: "
-        "добавьте алгоритм в solve_artificial_basis."
-    )
+    problem = create_problem(A, b, c, sense)
+    return run_stub("метод искусственного базиса", describe_linear_problem(problem))
