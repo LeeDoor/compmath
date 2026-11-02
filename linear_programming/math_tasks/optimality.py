@@ -1,6 +1,6 @@
 """Проверка решения на оптимальность."""
 
-from .problem import LinearProblem
+from ..problem import LinearProblem
 
 
 def check_optimality(

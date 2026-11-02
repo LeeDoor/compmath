@@ -3,7 +3,7 @@
 import numpy as np
 import numpy.typing as npt
 
-from .problem import LinearProblem, Sense
+from ..problem import LinearProblem, Sense
 
 
 def to_canonical_form(

@@ -1,17 +1,19 @@
 """Пример запуска и отображения задачи."""
 
-from linear_programming.artificial_basis import solve_artificial_basis
-from linear_programming.canonical_form import to_canonical_form
-from linear_programming.display_augmented_matrix import display_augmented_matrix
-from linear_programming.display_max import display_max
-from linear_programming.display_min import display_min
-from linear_programming.dual_simplex import solve_dual_simplex
-from linear_programming.optimality import check_optimality
-from linear_programming.primal_dual import solve_primal_dual
+from linear_programming.display_methods.display_augmented_matrix import (
+    display_augmented_matrix,
+)
+from linear_programming.display_methods.display_max import display_max
+from linear_programming.display_methods.display_min import display_min
+from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
+from linear_programming.math_tasks.canonical_form import to_canonical_form
+from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
+from linear_programming.math_tasks.optimality import check_optimality
+from linear_programming.math_tasks.primal_dual import solve_primal_dual
 from linear_programming.problem import create_problem
-from linear_programming.simplex import solve_simplex
-from linear_programming.standard_form import to_standard_form
-from linear_programming.transport import solve_transport
+from linear_programming.math_tasks.simplex import solve_simplex
+from linear_programming.math_tasks.standard_form import to_standard_form
+from linear_programming.math_tasks.transport import solve_transport
 
 
 def main() -> None:

@@ -3,7 +3,7 @@
 import numpy as np
 import numpy.typing as npt
 
-from .problem import Sense, create_problem
+from ..problem import Sense, create_problem
 
 
 def solve_artificial_basis(
