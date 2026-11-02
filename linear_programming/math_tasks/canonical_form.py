@@ -1,9 +1,9 @@
 """Приведение задачи к канонической форме."""
 
-import numpy as np
 import numpy.typing as npt
 
-from ..problem import LinearProblem, Sense
+from ..problem import Sense, create_problem
+from ._stub import describe_linear_problem, run_stub
 
 
 def to_canonical_form(
@@ -11,8 +11,7 @@ def to_canonical_form(
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
-) -> LinearProblem:
+) -> str:
     """Преобразовать задачу в каноническую форму."""
-    raise NotImplementedError(
-        "Приведение к канонической форме оставлено для самостоятельной реализации."
-    )
+    problem = create_problem(A, b, c, sense)
+    return run_stub("приведение к канонической форме", describe_linear_problem(problem))

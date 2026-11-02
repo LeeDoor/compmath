@@ -1,9 +1,9 @@
 """Симплекс-метод."""
 
-import numpy as np
 import numpy.typing as npt
 
 from ..problem import Sense, create_problem
+from ._stub import describe_linear_problem, run_stub
 
 
 def solve_simplex(
@@ -11,9 +11,7 @@ def solve_simplex(
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
-) -> np.matrix:
+) -> str:
     """Решить СЛАУ с целевой функцией методом симплекс-метода."""
-    create_problem(A, b, c, sense)
-    raise NotImplementedError(
-        "Симплекс-метод пока не реализован: добавьте алгоритм в solve_simplex."
-    )
+    problem = create_problem(A, b, c, sense)
+    return run_stub("симплекс-метод", describe_linear_problem(problem))
