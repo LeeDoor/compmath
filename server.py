@@ -255,7 +255,7 @@ def render_task_page(
                 f"<tr><th>Склад {row + 1}<br>{stock}</th>{costs}</tr>"
             )
         form.append(
-            '<table><thead><tr><th></th>'
+            '<table class="transport-table"><thead><tr><th></th>'
             + columns
             + "</tr></thead><tbody>"
             + "".join(rows)
@@ -272,7 +272,7 @@ def render_task_page(
         )
         rows = []
         for row in range(constraints):
-            coefficients = '<td> + </td>'.join(
+            coefficients = '<td class="operator plus">+</td>'.join(
                 "<td>"
                 + _number_input(
                     f"a_{row}_{column}",
@@ -284,16 +284,20 @@ def render_task_page(
             )
             rows.append(
                 f"<tr><th>Огр. {row + 1}</th>{coefficients}"
-                f'<td>≤</td><td>{_number_input(f"b_{row}", _form_value(values, f"b_{row}"), f"Правая часть ограничения {row + 1}")}</td></tr>'
+                f'<td class="operator relation">≤</td><td>{_number_input(f"b_{row}", _form_value(values, f"b_{row}"), f"Правая часть ограничения {row + 1}")}</td></tr>'
             )
         form.append(
-            '<table><thead><tr><th></th>'
+            '<table class="equation-table"><thead><tr><th></th>'
             + "".join(
                 f"<th>x{column + 1}</th>"
-                + ("<th></th>" if column < variables - 1 else "")
+                + (
+                    '<th class="operator plus"></th>'
+                    if column < variables - 1
+                    else ""
+                )
                 for column in range(variables)
             )
-            + "<th>≤</th><th>b</th></tr></thead><tbody>"
+            + '<th class="operator relation">≤</th><th>b</th></tr></thead><tbody>'
             + "".join(rows)
             + "</tbody></table>"
         )
@@ -337,7 +341,8 @@ def render_task_page(
         f"<title>{html.escape(task['title'])}</title>"
         '<link rel="stylesheet" href="/styles.css">'
         '<script src="/storage.js" defer></script></head><body><main>'
-        f'<p><a href="/">Назад к задачам</a></p><h1>{html.escape(task["title"])}</h1>'
+        f'<a class="back-button" href="/">← Назад к задачам</a>'
+        f'<h1>{html.escape(task["title"])}</h1>'
         + "".join(form)
         + "</main></body></html>"
     )

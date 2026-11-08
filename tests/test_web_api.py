@@ -58,9 +58,17 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertIn('name="a_3_2"', page)
         self.assertIn('name="b_3"', page)
+        self.assertIn('class="back-button" href="/"', page)
+        self.assertIn('class="equation-table"', page)
+        self.assertIn('class="operator plus"', page)
+        self.assertIn('class="operator relation"', page)
         self.assertNotIn('name="a_4_0"', page)
         self.assertIn('data-resize-url="/task/simplex"', page)
         self.assertNotIn("Обновить систему", page)
+
+    def test_transport_form_uses_compact_table_class(self):
+        page = render_task_page(TASK_BY_ID["transport"], {})
+        self.assertIn('class="transport-table"', page)
 
     def test_html_form_dimensions_are_sent_to_solver(self):
         values = {
