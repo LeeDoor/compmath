@@ -8,8 +8,11 @@ if (form) {
     saved = {};
   }
   if (!saved || typeof saved !== "object") saved = {};
+  delete saved.task_id;
 
-  const fields = [...form.querySelectorAll("input[name], select[name]")];
+  const fields = [
+    ...form.querySelectorAll('input[type="number"][name], select[name]'),
+  ];
   const sizeFields = new Set([
     "variables",
     "constraints",
