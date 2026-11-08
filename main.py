@@ -157,16 +157,9 @@ def _show_result(result: TaskResult) -> None:
 
 def _show_condition(
     task_name: str,
-    condition: str,
-    is_stub: bool,
+    condition: str
 ) -> None:
-    if is_stub:
-        message = (
-            f"Выполняется заглушка для задачи "
-            f"«{task_name}» с условием: {condition}"
-        )
-    else:
-        message = f"Условие задачи «{task_name}»: {condition}"
+    message = f"Условие задачи «{task_name}»: {condition}"
 
     print(f"\033[93m{message}\033[0m")
 
@@ -186,8 +179,6 @@ def _run_optimality_check(problem: LinearProblem) -> TaskResult:
 
 def main() -> None:
     input_cache: dict[str, object] = {}
-
-    implemented_tasks = {2, 3, 6} ##сюда пишем то, что реализовали
 
     tasks: dict[int, tuple[str, str, Callable[..., TaskResult]]] = {
         1: (
@@ -287,8 +278,7 @@ def main() -> None:
 
                 _show_condition(
                     task_name,
-                    condition,
-                    is_stub=choice not in implemented_tasks,
+                    condition
                 )
 
                 result = task_function(problem)
@@ -309,8 +299,7 @@ def main() -> None:
 
                 _show_condition(
                     task_name,
-                    condition,
-                    is_stub=choice not in implemented_tasks,
+                    condition
                 )
 
                 result = task_function(costs, supply, demand)

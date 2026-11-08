@@ -12,7 +12,9 @@ def solve_simplex(
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
-) -> np.matrix:
+    *,
+    return_details: bool = False,
+) -> np.matrix | tuple[np.matrix, list[int], np.ndarray, np.ndarray]:
     """Решить задачу симплекс-методом с выводом всех таблиц."""
 
     eps = 1e-10
@@ -381,4 +383,8 @@ def solve_simplex(
             "по нулевым оценкам Δ не обнаружено."
         )
 
+    solution_matrix = np.matrix(solution[:n].reshape(1, -1))
+    if return_details:
+        augmented_A = np.column_stack([A, np.eye(m)])
+        return solution_matrix, basis, tableau[-1, :n + m].copy(), augmented_A
     return np.matrix(solution.reshape(1, -1))
