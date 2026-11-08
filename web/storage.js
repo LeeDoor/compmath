@@ -9,29 +9,56 @@ if (form) {
   }
   if (!saved || typeof saved !== "object") saved = {};
 
-  for (const field of form.querySelectorAll("input[name], select[name]")) {
-    if (Object.hasOwn(saved, field.name)) field.value = saved[field.name];
+  const fields = [...form.querySelectorAll("input[name], select[name]")];
+  const sizeFields = new Set([
+    "variables",
+    "constraints",
+    "warehouses",
+    "customers",
+  ]);
+  let sizeChanged = false;
+  for (const field of fields) {
+    if (Object.hasOwn(saved, field.name)) {
+      const previousValue = field.value;
+      field.value = String(saved[field.name]);
+      if (sizeFields.has(field.name)) {
+        sizeChanged ||= previousValue !== field.value;
+      }
+    }
   }
 
   const save = () => {
     const values = {};
-    for (const field of form.querySelectorAll("input[name], select[name]")) {
+    for (const field of fields) {
       values[field.name] = field.value;
     }
     localStorage.setItem(key, JSON.stringify(values));
   };
+  const resize = (values, replace = false) => {
+    const query = new URLSearchParams(values);
+    const url = `${form.dataset.resizeUrl}?${query}`;
+    if (replace) window.location.replace(url);
+    else window.location.assign(url);
+  };
+
+  if (sizeChanged) {
+    const values = { ...saved };
+    for (const field of fields) {
+      if (!Object.hasOwn(values, field.name)) values[field.name] = field.value;
+    }
+    resize(values, true);
+  }
+
   form.addEventListener("input", save);
   form.addEventListener("change", save);
   form.addEventListener("submit", save);
 
-  for (const select of form.querySelectorAll(
-    'select[name="variables"], select[name="constraints"], ' +
-      'select[name="warehouses"], select[name="customers"]',
+  for (const select of fields.filter(
+    (field) => field.tagName === "SELECT" && sizeFields.has(field.name),
   )) {
     select.addEventListener("change", () => {
       save();
-      const query = new URLSearchParams(new FormData(form));
-      window.location.assign(`${form.dataset.resizeUrl}?${query}`);
+      resize(Object.fromEntries(new FormData(form)));
     });
   }
 }

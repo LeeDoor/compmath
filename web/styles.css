@@ -27,9 +27,10 @@ h1 {
 
 .portraits {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.5fr 1fr;
   gap: 20px;
-  margin-bottom: 38px;
+  max-width: 900px;
+  margin: 0 auto 38px;
 }
 
 figure {
