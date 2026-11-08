@@ -1,6 +1,7 @@
 """Интерактивное консольное меню лабораторной работы."""
 
 import math
+import sys
 from collections.abc import Callable
 
 import numpy as np
@@ -316,4 +317,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--cli"]:
+        main()
+    else:
+        from server import main as run_web_server
+
+        run_web_server()
