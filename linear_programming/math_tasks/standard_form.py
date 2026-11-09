@@ -4,7 +4,6 @@ import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
 from ..display_methods.display_function import display_function
-from ._stub import describe_linear_problem, run_stub
 from .simplex import ConstraintSign, VariableConstraint
 
 
@@ -22,6 +21,30 @@ def to_standard_form(
     b_np = np.asarray(problem.b, dtype=float).reshape(-1)
 
     m, n = A_np.shape
+    signs = (
+        ["<="] * m if constraint_signs is None else list(constraint_signs)
+    )
+    if len(signs) != m or any(sign not in ("<=", ">=", "=") for sign in signs):
+        raise ValueError(
+            "constraint_signs должны задавать знак '<=', '>=' или '=' "
+            "для каждого ограничения."
+        )
+
+    if variable_constraints is None:
+        variable_constraints = ["nonnegative"] * n
+    if len(variable_constraints) != n or any(
+        constraint not in ("nonnegative", "free")
+        for constraint in variable_constraints
+    ):
+        raise ValueError(
+            "variable_constraints должны задавать 'nonnegative' или 'free' "
+            "для каждой переменной."
+        )
+    free_vars = [
+        index
+        for index, constraint in enumerate(variable_constraints)
+        if constraint == "free"
+    ]
 
     result = ["Приведение к стандартной форме:"]
     if problem.sense == "min":
@@ -61,7 +84,9 @@ def to_standard_form(
             A_final.append(new_row)
             b_final.append(new_val)
             new_row_str = " + ".join(f"{new_row[j]:g}*x{j+1}" for j in range(n))
-            result.append(f"{new_row_str} >= {new_val:g}")
+            result.append(
+                f"   {row_str} >= {val:g}  =>  {new_row_str} <= {new_val:g}"
+            )
 
         elif sign == "=":
             A_final.append(row)

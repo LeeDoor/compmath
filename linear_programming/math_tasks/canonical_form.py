@@ -4,7 +4,6 @@ import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
 from ..display_methods.display_function import display_function
-from ._stub import describe_linear_problem, run_stub
 from .simplex import ConstraintSign, VariableConstraint
 
 
@@ -22,6 +21,31 @@ def to_canonical_form(
     c_np = np.asarray(problem.c, dtype=float).reshape(-1)
 
     m, n = A_np.shape
+    signs = (
+        ["<="] * m if constraint_signs is None else list(constraint_signs)
+    )
+    if len(signs) != m or any(sign not in ("<=", ">=", "=") for sign in signs):
+        raise ValueError(
+            "constraint_signs должны задавать знак '<=', '>=' или '=' "
+            "для каждого ограничения."
+        )
+
+    if variable_constraints is None:
+        variable_constraints = ["nonnegative"] * n
+    if len(variable_constraints) != n or any(
+        constraint not in ("nonnegative", "free")
+        for constraint in variable_constraints
+    ):
+        raise ValueError(
+            "variable_constraints должны задавать 'nonnegative' или 'free' "
+            "для каждой переменной."
+        )
+    free_vars = [
+        index
+        for index, constraint in enumerate(variable_constraints)
+        if constraint == "free"
+    ]
+
     result = ["Приведение к канонической форме:"]
     if problem.sense == "min":
         c_np = -c_np
@@ -48,7 +72,7 @@ def to_canonical_form(
         val = b_np[i]
         sign = signs[i]
         
-        row_str = " + ".join(f"{row[j]:g}*x{j+1}" for j in range(n))
+        row_str = " + ".join(f"{row[j]:g}*x{j+1}" for j in range(n)) or "0"
         
         if sign == "<=":
             var_count += 1
@@ -67,12 +91,12 @@ def to_canonical_form(
 
             result.append(f"   {row_str} = {val:g}")
 
-    if new_columns:
-        A_final = np.hstack([A_np, np.column_stack(new_columns)])
-        c_final = c_np
-    else:
-        A_final = A_np
-        c_final = c_np
+    A_final = (
+        np.hstack([A_np, np.column_stack(new_columns)])
+        if new_columns
+        else A_np
+    )
+    c_final = np.pad(c_np, (0, len(new_columns)))
     result.append("\nИТОГОВАЯ КАНОНИЧЕСКАЯ ФОРМА:")
     result.append(f"f(x) = {display_function(c_final)} -> max")
 
