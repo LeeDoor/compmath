@@ -84,21 +84,71 @@ class WebApiTests(unittest.TestCase):
 
     def test_transport_result_uses_html_text_and_tables(self):
         result = (
+            "Задача закрыта: добавлен фиктивный склад с запасом 1 и нулевыми тарифами.\n"
+            "Условие закрытой задачи:\n"
+            "Тарифы: [[1.0, 2.0]]\n"
+            "Запасы: [2.0]\n"
+            "Потребности: [2.0, 3.0]\n"
             "Шаг 1. Метод северо-западного угла\n"
             "+----------+----------+\n"
             "|          | b[1]=2   |\n"
             "+----------+----------+\n"
             "| a[1]=2   | \x1b[48;2;255;242;179m2 (1)\x1b[0m |\n"
             "+----------+----------+\n"
-            "Стоимость: <script>"
+            "Шаг 2. Метод потенциалов\n"
+            "Входящая клетка: (1, 2), оценка Δc=-1.\n"
+            "Цикл перераспределения: +(1,2) -(1,1)\n"
+            "Величина перераспределения Δx=2.\n"
+            "Все оценки Δc[i,j] неотрицательны: план оптимален.\n"
+            "Оптимальный план перевозок:\n"
+            "[[2. 0.]\n"
+            " [0. 3.]]\n"
+            "Минимальная стоимость перевозок: 17\n"
+            "\n"
+            "[[2. 0.]\n"
+            " [0. 3.]]"
         )
         page = render_task_page(TASK_BY_ID["transport"], {}, result=result)
 
-        self.assertIn('<p class="transport-result-text">', page)
+        self.assertIn(
+            '<h3 class="transport-result-heading">Метод северо-западного угла</h3>',
+            page,
+        )
+        self.assertIn(
+            '<h3 class="transport-result-heading">Итерация 1. Метод потенциалов</h3>',
+            page,
+        )
+        self.assertNotIn("Шаг 1.", page)
+        self.assertNotIn("Шаг 2.", page)
+        self.assertIn(
+            '<p class="transport-balance-notice">Задача закрыта: добавлен '
+            "фиктивный склад с запасом 1 и нулевыми тарифами.</p>",
+            page,
+        )
+        for hidden_text in (
+            "Условие закрытой задачи",
+            "Тарифы:",
+            "Запасы:",
+            "Потребности:",
+            "Входящая клетка:",
+            "Цикл перераспределения:",
+            "Величина перераспределения",
+            "план оптимален",
+        ):
+            self.assertNotIn(hidden_text, page)
         self.assertIn('<table class="transport-result-table">', page)
         self.assertIn("<th scope=\"col\">b[1]=2</th>", page)
         self.assertIn('<td class="selected-cell">2 (1)</td>', page)
-        self.assertIn("Стоимость: &lt;script&gt;", page)
+        self.assertIn('<section class="transport-solution">', page)
+        self.assertIn('<table class="transport-solution-table">', page)
+        self.assertIn("<th scope=\"col\">Потребитель 1</th>", page)
+        self.assertIn("<td>3</td>", page)
+        self.assertIn(
+            '<p class="transport-result-cost">Минимальная стоимость перевозок: '
+            "<strong>17</strong></p>",
+            page,
+        )
+        self.assertNotIn("[[2.", page)
         self.assertNotIn("<textarea", page)
 
     def test_non_transport_result_keeps_textarea(self):
