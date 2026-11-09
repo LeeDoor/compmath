@@ -77,6 +77,7 @@ CONSTRAINT_TASKS = frozenset(
     }
 )
 SOLVER_OUTPUT_LOCK = Lock()
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _validate_vector(value: Any, name: str) -> list[float]:
@@ -257,6 +258,79 @@ def _number_input(name: str, value: str, label: str) -> str:
     )
 
 
+def _render_transport_result(result: str) -> str:
+    """Render transport solver output as HTML text and semantic tables."""
+    lines = result.splitlines()
+    rendered: list[str] = []
+    index = 0
+
+    def is_table_line(line: str) -> bool:
+        return line.startswith("|") or re.fullmatch(r"\+(?:-+\+)+", line) is not None
+
+    while index < len(lines):
+        if is_table_line(lines[index]):
+            table_lines = []
+            while index < len(lines) and is_table_line(lines[index]):
+                table_lines.append(lines[index])
+                index += 1
+
+            rows = [
+                line.split("|")[1:-1]
+                for line in table_lines
+                if line.startswith("|")
+            ]
+            if rows:
+                header_index = next(
+                    (
+                        row_index
+                        for row_index, row in enumerate(rows)
+                        if row and not row[0].strip()
+                    ),
+                    None,
+                )
+                table = ['<table class="transport-result-table">']
+                if header_index is not None:
+                    headers = rows.pop(header_index)
+                    table.append("<thead><tr>")
+                    table.extend(
+                        f"<th scope=\"col\">{html.escape(re.sub(_ANSI_ESCAPE, '', cell).strip())}</th>"
+                        for cell in headers
+                    )
+                    table.append("</tr></thead>")
+                table.append("<tbody>")
+                for row in rows:
+                    cells = []
+                    for column, cell in enumerate(row):
+                        selected = "\x1b[48;2;255;242;179m" in cell
+                        text = html.escape(re.sub(_ANSI_ESCAPE, "", cell).strip())
+                        css_class = ' class="selected-cell"' if selected else ""
+                        if column == 0:
+                            cells.append(
+                                f'<th scope="row"{css_class}>{text}</th>'
+                            )
+                        else:
+                            cells.append(f"<td{css_class}>{text}</td>")
+                    table.append("<tr>" + "".join(cells) + "</tr>")
+                table.append("</tbody></table>")
+                rendered.append("".join(table))
+            continue
+
+        text_lines = []
+        while index < len(lines) and not is_table_line(lines[index]):
+            text = re.sub(_ANSI_ESCAPE, "", lines[index]).strip()
+            if text:
+                text_lines.append(text)
+            index += 1
+        if text_lines:
+            rendered.append(
+                '<p class="transport-result-text">'
+                + "<br>".join(html.escape(line) for line in text_lines)
+                + "</p>"
+            )
+
+    return "".join(rendered)
+
+
 def render_task_page(
     task: dict[str, Any],
     values: dict[str, str],
@@ -417,12 +491,16 @@ def render_task_page(
     if error:
         form.append(f'<p class="error">{html.escape(error)}</p>')
     if result is not None:
-        clean_result = re.sub(r"\x1b\[[0-9;]*m", "", result)
-        form.append(
-            '<h2>Результат</h2><textarea readonly rows="18" cols="90">'
-            + html.escape(clean_result)
-            + "</textarea>"
-        )
+        clean_result = _ANSI_ESCAPE.sub("", result)
+        form.append('<h2>Результат</h2>')
+        if task_id == "transport":
+            form.append(_render_transport_result(result))
+        else:
+            form.append(
+                '<textarea readonly rows="18" cols="90">'
+                + html.escape(clean_result)
+                + "</textarea>"
+            )
 
     return (
         '<!doctype html><html lang="ru"><head><meta charset="utf-8">'

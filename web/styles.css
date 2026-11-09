@@ -216,6 +216,22 @@ table {
   max-width: 100%;
 }
 
+.transport-result-table {
+  width: auto;
+  max-width: 100%;
+}
+
+.transport-result-table th,
+.transport-result-table td {
+  min-width: 78px;
+  padding: 6px;
+}
+
+.transport-result-table .selected-cell {
+  background: #fff2b3;
+  color: #202020;
+}
+
 form > p {
   text-align: center;
 }

@@ -82,6 +82,31 @@ class WebApiTests(unittest.TestCase):
         page = render_task_page(TASK_BY_ID["transport"], {})
         self.assertIn('class="transport-table"', page)
 
+    def test_transport_result_uses_html_text_and_tables(self):
+        result = (
+            "Шаг 1. Метод северо-западного угла\n"
+            "+----------+----------+\n"
+            "|          | b[1]=2   |\n"
+            "+----------+----------+\n"
+            "| a[1]=2   | \x1b[48;2;255;242;179m2 (1)\x1b[0m |\n"
+            "+----------+----------+\n"
+            "Стоимость: <script>"
+        )
+        page = render_task_page(TASK_BY_ID["transport"], {}, result=result)
+
+        self.assertIn('<p class="transport-result-text">', page)
+        self.assertIn('<table class="transport-result-table">', page)
+        self.assertIn("<th scope=\"col\">b[1]=2</th>", page)
+        self.assertIn('<td class="selected-cell">2 (1)</td>', page)
+        self.assertIn("Стоимость: &lt;script&gt;", page)
+        self.assertNotIn("<textarea", page)
+
+    def test_non_transport_result_keeps_textarea(self):
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result="Результат")
+
+        self.assertIn("<textarea readonly", page)
+        self.assertNotIn("transport-result-table", page)
+
     def test_html_form_payload_includes_signs_and_variable_constraints(self):
         payload = _form_payload(
             {
