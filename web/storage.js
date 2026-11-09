@@ -11,7 +11,7 @@ if (form) {
   delete saved.task_id;
 
   const fields = [
-    ...form.querySelectorAll('input[type="number"][name], select[name]'),
+    ...form.querySelectorAll('input[name]:not([name="task_id"]), select[name]'),
   ];
   const sizeFields = new Set([
     "variables",
@@ -29,6 +29,15 @@ if (form) {
       }
     }
   }
+
+  const updateVariableButton = (button) => {
+    const index = Number(button.dataset.variableIndex);
+    const constraint = form.querySelector(`[name="x_constraint_${index}"]`);
+    button.textContent =
+      constraint.value === "free" ? `∀ x${index + 1}` : `x${index + 1} ≥ 0`;
+  };
+  const variableButtons = [...form.querySelectorAll("[data-variable-index]")];
+  variableButtons.forEach(updateVariableButton);
 
   const save = () => {
     const values = {};
@@ -62,6 +71,17 @@ if (form) {
     select.addEventListener("change", () => {
       save();
       resize(Object.fromEntries(new FormData(form)));
+    });
+  }
+
+  for (const button of variableButtons) {
+    button.addEventListener("click", () => {
+      const field = form.querySelector(
+        `[name="x_constraint_${button.dataset.variableIndex}"]`,
+      );
+      field.value = field.value === "free" ? "nonnegative" : "free";
+      updateVariableButton(button);
+      save();
     });
   }
 }

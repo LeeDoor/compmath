@@ -154,6 +154,28 @@ button:hover {
   gap: 7px;
 }
 
+.variable-constraints {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px auto 20px;
+}
+
+.variable-constraint {
+  width: 96px;
+  min-width: 96px;
+  height: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 select {
   min-width: 82px;
   padding: 7px;

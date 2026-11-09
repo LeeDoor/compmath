@@ -66,6 +66,16 @@ TASKS = [
     },
 ]
 TASK_BY_ID = {task["id"]: task for task in TASKS}
+CONSTRAINT_TASKS = frozenset(
+    {
+        "primal_dual",
+        "simplex",
+        "dual_simplex",
+        "artificial_basis",
+        "canonical_form",
+        "standard_form",
+    }
+)
 SOLVER_OUTPUT_LOCK = Lock()
 
 
@@ -105,6 +115,25 @@ def _validate_matrix(value: Any, name: str) -> list[list[float]]:
         ]
         for row_index, row in enumerate(value)
     ]
+
+
+def _validate_choices(
+    value: Any,
+    name: str,
+    allowed: set[str],
+    expected_length: int,
+    default: str,
+) -> list[str]:
+    if value is None:
+        return [default] * expected_length
+    if (
+        not isinstance(value, list)
+        or len(value) != expected_length
+        or any(not isinstance(item, str) or item not in allowed for item in value)
+    ):
+        options = ", ".join(sorted(allowed))
+        raise ValueError(f"{name}: ожидается {expected_length} значений из {options}.")
+    return value
 
 
 def _run_solver(function: Any, *args: Any) -> str:
@@ -156,6 +185,24 @@ def solve_task(payload: Any) -> str:
         problem = create_problem(matrix, right_hand_side, objective, sense)
         return _run_solver(check_optimality, problem, solution)
 
+    solver_args: list[Any] = [matrix, right_hand_side, objective, sense]
+    if task_id in CONSTRAINT_TASKS:
+        constraint_signs = _validate_choices(
+            payload.get("constraint_signs"),
+            "constraint_signs",
+            {"<=", ">=", "="},
+            len(matrix),
+            "<=",
+        )
+        variable_constraints = _validate_choices(
+            payload.get("variable_constraints"),
+            "variable_constraints",
+            {"nonnegative", "free"},
+            len(objective),
+            "nonnegative",
+        )
+        solver_args.extend([constraint_signs, variable_constraints])
+
     solver = {
         "primal_dual": solve_primal_dual,
         "simplex": solve_simplex,
@@ -164,7 +211,7 @@ def solve_task(payload: Any) -> str:
         "canonical_form": to_canonical_form,
         "standard_form": to_standard_form,
     }[task_id]
-    return _run_solver(solver, matrix, right_hand_side, objective, sense)
+    return _run_solver(solver, *solver_args)
 
 
 def _form_value(values: dict[str, str], name: str, default: str = "") -> str:
@@ -264,6 +311,7 @@ def render_task_page(
     else:
         variables = _form_dimension(values, "variables", "неизвестных")
         constraints = _form_dimension(values, "constraints", "ограничений")
+        has_variable_constraints = task_id in CONSTRAINT_TASKS
         form.append(
             '<p class="dimensions">'
             + _select("variables", "Неизвестных:", variables)
@@ -272,6 +320,20 @@ def render_task_page(
         )
         rows = []
         for row in range(constraints):
+            if has_variable_constraints:
+                relation = _form_value(values, f"sign_{row}", "<=")
+                relation_cell = (
+                    f'<select name="sign_{row}" aria-label="Знак ограничения {row + 1}">'
+                    + "".join(
+                        f'<option value="{html.escape(sign, quote=True)}"'
+                        f'{" selected" if relation == sign else ""}>'
+                        f'{html.escape(sign)}</option>'
+                        for sign in ("<=", ">=", "=")
+                    )
+                    + "</select>"
+                )
+            else:
+                relation_cell = "≤"
             coefficients = '<td class="operator plus">+</td>'.join(
                 "<td>"
                 + _number_input(
@@ -284,7 +346,7 @@ def render_task_page(
             )
             rows.append(
                 f"<tr><th>Огр. {row + 1}</th>{coefficients}"
-                f'<td class="operator relation">≤</td><td>{_number_input(f"b_{row}", _form_value(values, f"b_{row}"), f"Правая часть ограничения {row + 1}")}</td></tr>'
+                f'<td class="operator relation">{relation_cell}</td><td>{_number_input(f"b_{row}", _form_value(values, f"b_{row}"), f"Правая часть ограничения {row + 1}")}</td></tr>'
             )
         form.append(
             '<table class="equation-table"><thead><tr><th></th>'
@@ -297,10 +359,37 @@ def render_task_page(
                 )
                 for column in range(variables)
             )
-            + '<th class="operator relation">≤</th><th>b</th></tr></thead><tbody>'
+            + (
+                '<th class="operator relation">Знак</th>'
+                if has_variable_constraints
+                else '<th class="operator relation">≤</th>'
+            )
+            + "<th>b</th></tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
+        if has_variable_constraints:
+            variable_buttons = []
+            for column in range(variables):
+                constraint = _form_value(
+                    values, f"x_constraint_{column}", "nonnegative"
+                )
+                label = (
+                    f"∀ x{column + 1}"
+                    if constraint == "free"
+                    else f"x{column + 1} ≥ 0"
+                )
+                variable_buttons.append(
+                    f'<input type="hidden" name="x_constraint_{column}" '
+                    f'value="{html.escape(constraint, quote=True)}">'
+                    f'<button type="button" class="variable-constraint" '
+                    f'data-variable-index="{column}">{label}</button>'
+                )
+            form.append(
+                '<div class="variable-constraints" aria-label="Ограничения переменных">'
+                + "".join(variable_buttons)
+                + "</div>"
+            )
         objective = "".join(
             (
                 f'<label>{_number_input(f"c_{column}", _form_value(values, f"c_{column}"), f"Коэффициент функции при x{column + 1}")}'
@@ -397,6 +486,14 @@ def _form_payload(values: dict[str, str]) -> dict[str, Any]:
         ],
         "sense": values.get("sense", "max"),
     }
+    if task_id in CONSTRAINT_TASKS:
+        payload["constraint_signs"] = [
+            values.get(f"sign_{row}", "<=") for row in range(constraints)
+        ]
+        payload["variable_constraints"] = [
+            values.get(f"x_constraint_{column}", "nonnegative")
+            for column in range(variables)
+        ]
     if task.get("requires_solution"):
         payload["solution"] = [
             _form_number(values, f"solution_{column}", "компонент решения")
