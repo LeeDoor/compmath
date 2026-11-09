@@ -1,9 +1,10 @@
 
 """Решение задачи линейного программирования симплекс-методом."""
 
+from typing import Literal
+
 import numpy as np
 import numpy.typing as npt
-from typing import Literal
 
 from ..problem import Sense, create_problem
 

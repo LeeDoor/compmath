@@ -340,7 +340,7 @@ def _display_table(
     )
     print(f"\n{title}")
     print(separator)
-    print(format_row("Запасы", headers))
+    print(format_row("", headers))
     print(separator)
     for row, label in enumerate(row_labels):
         cells = []
