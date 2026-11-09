@@ -398,14 +398,6 @@ def _display_potential_step(
         potentials,
         cycle,
     )
-    print(
-        "Потенциалы u[i]: "
-        f"{[_format_number(value) for value in potentials.row_potentials]}"
-    )
-    print(
-        "Потенциалы v[j]: "
-        f"{[_format_number(value) for value in potentials.column_potentials]}"
-    )
     if entering is None:
         print("Все оценки Δc[i,j] неотрицательны: план оптимален.")
     else:
