@@ -3,8 +3,13 @@
 
 import numpy as np
 import numpy.typing as npt
+from typing import Literal
 
 from ..problem import Sense, create_problem
+
+
+ConstraintSign = Literal["<=", ">=", "="]
+VariableConstraint = Literal["nonnegative", "free"]
 
 
 def solve_simplex(
@@ -12,6 +17,8 @@ def solve_simplex(
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
     *,
     return_details: bool = False,
 ) -> np.matrix | tuple[np.matrix, list[int], np.ndarray, np.ndarray]:

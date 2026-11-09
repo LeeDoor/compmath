@@ -4,7 +4,7 @@ import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
 from ._stub import describe_linear_problem, run_stub
-from .simplex import solve_simplex
+from .simplex import ConstraintSign, VariableConstraint, solve_simplex
 
 def _format_vector(values, prefix):
     parts = [f"{prefix}{i} = {v:g}" for i, v in enumerate(values, start=1)]
@@ -37,6 +37,8 @@ def solve_primal_dual(A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
 )->str:
     problem = create_problem(A, b, c, sense)
     A_np = np.asarray(problem.A, dtype=float)
@@ -46,7 +48,13 @@ def solve_primal_dual(A: npt.ArrayLike,
     A_dual, b_dual, c_dual, sense_dual = build_dual(A_np, b_np, c_np, sense)
 
     x, basis, delta, A_simplex = solve_simplex(
-        A_np, b_np, c_np, sense, return_details=True
+        A_np,
+        b_np,
+        c_np,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        return_details=True,
     )
 
     if A_simplex.shape[1] > len(c_np):
