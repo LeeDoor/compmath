@@ -77,6 +77,7 @@ CONSTRAINT_TASKS = frozenset(
     }
 )
 SOLVER_OUTPUT_LOCK = Lock()
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _validate_vector(value: Any, name: str) -> list[float]:
@@ -257,6 +258,178 @@ def _number_input(name: str, value: str, label: str) -> str:
     )
 
 
+def _render_transport_result(result: str) -> str:
+    """Render transport solver output as HTML text and semantic tables."""
+    lines = result.splitlines()
+    rendered: list[str] = []
+    index = 0
+    solution_rendered = False
+
+    def is_table_line(line: str) -> bool:
+        return line.startswith("|") or re.fullmatch(r"\+(?:-+\+)+", line) is not None
+
+    def parse_matrix(start: int) -> tuple[list[list[str]], int] | None:
+        while start < len(lines) and not lines[start].strip():
+            start += 1
+        if start == len(lines) or not lines[start].lstrip().startswith("["):
+            return None
+
+        matrix_rows = []
+        bracket_depth = 0
+        number_pattern = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
+        while start < len(lines):
+            line = lines[start]
+            if "[" not in line and "]" not in line:
+                return None
+            bracket_depth += line.count("[") - line.count("]")
+            values = number_pattern.findall(line)
+            if values:
+                matrix_rows.append([f"{float(value):g}" for value in values])
+            start += 1
+            if bracket_depth == 0:
+                break
+
+        if (
+            bracket_depth != 0
+            or not matrix_rows
+            or any(len(row) != len(matrix_rows[0]) for row in matrix_rows)
+        ):
+            return None
+        return matrix_rows, start
+
+    def render_solution_table(matrix_rows: list[list[str]]) -> str:
+        headers = "".join(
+            f"<th scope=\"col\">Потребитель {column + 1}</th>"
+            for column in range(len(matrix_rows[0]))
+        )
+        body = "".join(
+            "<tr>"
+            f"<th scope=\"row\">Склад {row + 1}</th>"
+            + "".join(f"<td>{html.escape(value)}</td>" for value in values)
+            + "</tr>"
+            for row, values in enumerate(matrix_rows)
+        )
+        return (
+            '<section class="transport-solution">'
+            '<h3 class="transport-result-heading">Оптимальный план перевозок</h3>'
+            '<div class="transport-solution-scroll"><table class="transport-solution-table">'
+            f"<thead><tr><th scope=\"col\">Склад</th>{headers}</tr></thead>"
+            f"<tbody>{body}</tbody></table></div></section>"
+        )
+
+    while index < len(lines):
+        if is_table_line(lines[index]):
+            table_lines = []
+            while index < len(lines) and is_table_line(lines[index]):
+                table_lines.append(lines[index])
+                index += 1
+
+            rows = [
+                line.split("|")[1:-1]
+                for line in table_lines
+                if line.startswith("|")
+            ]
+            if rows:
+                header_index = next(
+                    (
+                        row_index
+                        for row_index, row in enumerate(rows)
+                        if row and not row[0].strip()
+                    ),
+                    None,
+                )
+                table = ['<table class="transport-result-table">']
+                if header_index is not None:
+                    headers = rows.pop(header_index)
+                    table.append("<thead><tr>")
+                    table.extend(
+                        f"<th scope=\"col\">{html.escape(re.sub(_ANSI_ESCAPE, '', cell).strip())}</th>"
+                        for cell in headers
+                    )
+                    table.append("</tr></thead>")
+                table.append("<tbody>")
+                for row in rows:
+                    cells = []
+                    for column, cell in enumerate(row):
+                        selected = "\x1b[48;2;255;242;179m" in cell
+                        text = html.escape(re.sub(_ANSI_ESCAPE, "", cell).strip())
+                        css_class = ' class="selected-cell"' if selected else ""
+                        if column == 0:
+                            cells.append(
+                                f'<th scope="row"{css_class}>{text}</th>'
+                            )
+                        else:
+                            cells.append(f"<td{css_class}>{text}</td>")
+                    table.append("<tr>" + "".join(cells) + "</tr>")
+                table.append("</tbody></table>")
+                rendered.append("".join(table))
+            continue
+
+        text = re.sub(_ANSI_ESCAPE, "", lines[index]).strip()
+        northwest_heading = "Шаг 1. Метод северо-западного угла"
+        potential_iteration = re.fullmatch(r"Шаг (\d+)\. Метод потенциалов", text)
+        if text == "Оптимальный план перевозок:":
+            parsed_matrix = parse_matrix(index + 1)
+            if parsed_matrix is not None:
+                matrix_rows, index = parsed_matrix
+                rendered.append(render_solution_table(matrix_rows))
+                solution_rendered = True
+                continue
+            rendered.append(
+                '<p class="transport-result-text">Оптимальный план перевозок:</p>'
+            )
+            index += 1
+            continue
+        if solution_rendered and lines[index].lstrip().startswith("["):
+            parsed_matrix = parse_matrix(index)
+            if parsed_matrix is not None:
+                _, index = parsed_matrix
+                continue
+        total_cost = re.fullmatch(r"Минимальная стоимость перевозок: (.+)", text)
+        if total_cost:
+            rendered.append(
+                '<p class="transport-result-cost">Минимальная стоимость перевозок: '
+                f"<strong>{html.escape(total_cost.group(1))}</strong></p>"
+            )
+            index += 1
+            continue
+        if text.startswith("Задача закрыта: добавлен фиктивный"):
+            rendered.append(
+                f'<p class="transport-balance-notice">{html.escape(text)}</p>'
+            )
+            index += 1
+            continue
+        if text == northwest_heading:
+            rendered.append(
+                '<h3 class="transport-result-heading">Метод северо-западного угла</h3>'
+            )
+            index += 1
+            continue
+        if potential_iteration:
+            rendered.append(
+                '<h3 class="transport-result-heading">'
+                f"Итерация {int(potential_iteration.group(1)) - 1}. "
+                "Метод потенциалов</h3>"
+            )
+            index += 1
+            continue
+
+        while index < len(lines) and not is_table_line(lines[index]):
+            text = re.sub(_ANSI_ESCAPE, "", lines[index]).strip()
+            if (
+                text == "Шаг 1. Метод северо-западного угла"
+                or text == "Оптимальный план перевозок:"
+                or text.startswith("Задача закрыта: добавлен фиктивный")
+                or re.fullmatch(r"Шаг \d+\. Метод потенциалов", text)
+                or re.fullmatch(r"Минимальная стоимость перевозок: .+", text)
+                or (solution_rendered and lines[index].lstrip().startswith("["))
+            ):
+                break
+            index += 1
+
+    return "".join(rendered)
+
+
 def render_task_page(
     task: dict[str, Any],
     values: dict[str, str],
@@ -417,12 +590,16 @@ def render_task_page(
     if error:
         form.append(f'<p class="error">{html.escape(error)}</p>')
     if result is not None:
-        clean_result = re.sub(r"\x1b\[[0-9;]*m", "", result)
-        form.append(
-            '<h2>Результат</h2><textarea readonly rows="18" cols="90">'
-            + html.escape(clean_result)
-            + "</textarea>"
-        )
+        clean_result = _ANSI_ESCAPE.sub("", result)
+        form.append('<h2>Результат</h2>')
+        if task_id == "transport":
+            form.append(_render_transport_result(result))
+        else:
+            form.append(
+                '<textarea readonly rows="18" cols="90">'
+                + html.escape(clean_result)
+                + "</textarea>"
+            )
 
     return (
         '<!doctype html><html lang="ru"><head><meta charset="utf-8">'

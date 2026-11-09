@@ -216,6 +216,80 @@ table {
   max-width: 100%;
 }
 
+.transport-result-table {
+  width: auto;
+  max-width: 100%;
+}
+
+.transport-result-table th,
+.transport-result-table td {
+  min-width: 78px;
+  padding: 6px;
+}
+
+.transport-result-table .selected-cell {
+  background: #fff2b3;
+  color: #202020;
+}
+
+.transport-result-heading {
+  margin: 18px 0 8px;
+  color: #294d37;
+  font-size: 17px;
+  text-align: center;
+}
+
+.transport-solution {
+  margin: 24px auto 16px;
+  padding: 18px;
+  border: 1px solid #c9d4c8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 12px #243d2d12;
+}
+
+.transport-solution .transport-result-heading {
+  margin-top: 0;
+  text-align: center;
+}
+
+.transport-solution-scroll {
+  overflow-x: auto;
+}
+
+.transport-solution-table {
+  width: 100%;
+  margin: 8px 0 0;
+}
+
+.transport-solution-table th,
+.transport-solution-table td {
+  min-width: 90px;
+  padding: 10px;
+}
+
+.transport-result-cost {
+  margin: 16px 0;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: #dce8da;
+  color: #294d37;
+  text-align: center;
+  font-size: 18px;
+}
+
+.transport-result-text {
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+.transport-balance-notice {
+  margin: 10px 0;
+  color: #294d37;
+  text-align: center;
+  font-weight: bold;
+}
+
 form > p {
   text-align: center;
 }
