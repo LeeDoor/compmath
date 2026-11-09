@@ -340,7 +340,7 @@ def _display_table(
     )
     print(f"\n{title}")
     print(separator)
-    print(format_row("Запасы", headers))
+    print(format_row("", headers))
     print(separator)
     for row, label in enumerate(row_labels):
         cells = []
@@ -397,14 +397,6 @@ def _display_potential_step(
         f"Шаг {iteration}. Метод потенциалов",
         potentials,
         cycle,
-    )
-    print(
-        "Потенциалы u[i]: "
-        f"{[_format_number(value) for value in potentials.row_potentials]}"
-    )
-    print(
-        "Потенциалы v[j]: "
-        f"{[_format_number(value) for value in potentials.column_potentials]}"
     )
     if entering is None:
         print("Все оценки Δc[i,j] неотрицательны: план оптимален.")

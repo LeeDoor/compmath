@@ -4,14 +4,17 @@ import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
 from ..display_methods.display_function import display_function
+from ._stub import describe_linear_problem, run_stub
+from .simplex import ConstraintSign, VariableConstraint
+
 
 def to_standard_form(
     A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
-    signs: list[str] | None = None,
-    free_vars: list[int] | None = None
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
 ) -> str:
     problem = create_problem(A, b, c, sense)
     A_np = np.asarray(problem.A, dtype=float)
