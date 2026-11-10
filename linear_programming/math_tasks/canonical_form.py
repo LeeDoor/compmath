@@ -152,3 +152,79 @@ def to_canonical_form(
     result.append(f"  {', '.join(var_names)} >= 0")
 
     return "\n".join(result)
+
+def get_canonical_matrices(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Получить матрицы задачи в канонической форме."""
+
+    problem = create_problem(A, b, c, sense)
+
+    A_np = np.asarray(problem.A, dtype=float)
+    b_np = np.asarray(problem.b, dtype=float).reshape(-1)
+    c_np = np.asarray(problem.c, dtype=float).reshape(-1)
+
+    m, n = A_np.shape
+
+    signs = (
+        ["<="] * m
+        if constraint_signs is None
+        else list(constraint_signs)
+    )
+
+    if len(signs) != m or any(
+        sign not in ("<=", ">=", "=") for sign in signs
+    ):
+        raise ValueError("Некорректные знаки ограничений.")
+
+    if variable_constraints is None:
+        variable_constraints = ["nonnegative"] * n
+
+    if len(variable_constraints) != n or any(
+        value not in ("nonnegative", "free")
+        for value in variable_constraints
+    ):
+        raise ValueError("Некорректные ограничения переменных.")
+
+    if problem.sense == "min":
+        c_np = -c_np
+
+    # Свободные переменные заменяем разностью двух неотрицательных.
+    free_vars = [
+        i for i, value in enumerate(variable_constraints)
+        if value == "free"
+    ]
+
+    for j in reversed(free_vars):
+        A_np = np.insert(A_np, j + 1, -A_np[:, j], axis=1)
+        c_np = np.insert(c_np, j + 1, -c_np[j])
+
+    decision_count = A_np.shape[1]
+
+    # Добавляем дополнительные переменные.
+    extra_columns = []
+
+    for i, sign in enumerate(signs):
+        if sign == "=":
+            continue
+
+        column = np.zeros(m)
+
+        if sign == "<=":
+            column[i] = 1
+        else:
+            column[i] = -1
+
+        extra_columns.append(column)
+
+    if extra_columns:
+        A_np = np.column_stack([A_np, *extra_columns])
+
+    c_np = np.pad(c_np, (0, len(extra_columns)))
+
+    return A_np, b_np, c_np, decision_count
