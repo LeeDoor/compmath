@@ -68,8 +68,40 @@ figcaption {
 
 .tasks {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.tasks a:nth-child(1) {
+  grid-area: 1 / 1;
+}
+
+.tasks a:nth-child(2) {
+  grid-area: 2 / 1;
+}
+
+.tasks a:nth-child(3) {
+  grid-area: 1 / 2;
+}
+
+.tasks a:nth-child(4) {
+  grid-area: 2 / 2;
+}
+
+.tasks a:nth-child(5) {
+  grid-area: 3 / 2;
+}
+
+.tasks a:nth-child(6) {
+  grid-area: 4 / 2;
+}
+
+.tasks a:nth-child(7) {
+  grid-area: 1 / 3;
+}
+
+.tasks a:nth-child(8) {
+  grid-area: 2 / 3;
 }
 
 .tasks a {
@@ -232,11 +264,92 @@ table {
   color: #202020;
 }
 
+.algorithm-result-heading,
 .transport-result-heading {
   margin: 18px 0 8px;
   color: #294d37;
   font-size: 17px;
   text-align: center;
+}
+
+.algorithm-result-text {
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.math-expression,
+.equation-system-row {
+  font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 19px;
+}
+
+.math-expression {
+  text-align: center;
+}
+
+.equation-system-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.equation-system {
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px auto 20px;
+  padding: 14px 20px;
+  border: 1px solid #c9d4c8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 12px #243d2d12;
+}
+
+.equation-system-brace {
+  color: #376b4a;
+  font-family: "Times New Roman", serif;
+  font-size: calc(2rem + var(--equation-count) * 0.65rem);
+  line-height: 1;
+}
+
+.equation-system-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.equation-system-row {
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.equation-system-row var,
+.math-expression var {
+  font-style: italic;
+}
+
+.equation-system-row sup,
+.math-expression sup {
+  font-size: 0.72em;
+}
+
+.equation-system-row sub,
+.math-expression sub {
+  font-size: 0.72em;
+}
+
+.algorithm-result-scroll {
+  overflow-x: auto;
+}
+
+.algorithm-result-table {
+  width: auto;
+  max-width: 100%;
+}
+
+.algorithm-result-table th,
+.algorithm-result-table td {
+  min-width: 78px;
+  padding: 6px;
 }
 
 .transport-solution {
@@ -382,6 +495,7 @@ textarea {
   }
 
   .tasks a {
+    grid-area: auto;
     min-height: 76px;
     padding: 10px;
     font-size: 14px;

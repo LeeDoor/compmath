@@ -5,17 +5,51 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
+from ..display_methods import format_system_of_equations
 from ..problem import Sense, create_problem
+from .steps import StepReport
 
 
 ConstraintSign = Literal["<=", ">=", "="]
 VariableConstraint = Literal["nonnegative", "free"]
 
 
-def run_simplex_tableau(
+def append_simplex_table(
+    report: StepReport,
+    tableau: np.ndarray,
+    basis: list[int],
+    variable_names: list[str],
+    title: str,
+) -> None:
+    """Append a simplex tableau using the shared dual-simplex layout."""
+    variable_count = tableau.shape[1] - 1
+    nonbasic = [
+        column for column in range(variable_count) if column not in basis
+    ]
+
+    report.add(f"\n{title}:")
+    report.add(
+        f"{'Базис':>8}"
+        + "".join(f"{variable_names[column]:>12}" for column in nonbasic)
+        + f"{'b':>12}"
+    )
+    for row in range(len(basis)):
+        report.add(
+            f"{variable_names[basis[row]]:>8}"
+            + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
+            + f"{tableau[row, -1]:12.4g}"
+        )
+    report.add(
+        f"{'Δ':>8}"
+        + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
+    )
+
+
+def _run_simplex_tableau_impl(
     tableau: np.ndarray,
     basis: list[int],
     costs: np.ndarray,
+    report: StepReport,
     variable_names: list[str] | None = None,
     title: str = "Симплекс-метод",
     eps: float = 1e-10,
@@ -45,40 +79,24 @@ def run_simplex_tableau(
 
     non_basis = [j for j in range(variable_count) if j not in basis]
 
-    def print_table(number: int) -> None:
-        print(f"\n{'=' * 65}")
-        print(f"{title}. СИМПЛЕКСНАЯ ТАБЛИЦА №{number}")
-        print(f"{'=' * 65}")
-
-        header = ["Базис"] + [variable_names[j] for j in non_basis] + ["b"]
-        widths = [9] + [11] * (len(header) - 1)
-
-        print("".join(str(value).center(width) for value, width in zip(header, widths)))
-
-        for i in range(row_count):
-            row = (
-                [variable_names[basis[i]]]
-                + [f"{tableau[i, j]:.4f}" for j in non_basis]
-                + [f"{tableau[i, -1]:.4f}"]
-            )
-            print("".join(str(value).center(width) for value, width in zip(row, widths)))
-
-        print("-" * sum(widths))
-        delta_row = (
-            ["Δ"]
-            + [f"{tableau[-1, j]:.4f}" for j in non_basis]
-            + [f"{tableau[-1, -1]:.4f}"]
+    def append_table(number: int) -> None:
+        append_simplex_table(
+            report,
+            tableau,
+            basis,
+            variable_names,
+            f"{title}. СИМПЛЕКСНАЯ ТАБЛИЦА №{number}",
         )
-        print("".join(str(value).center(width) for value, width in zip(delta_row, widths)))
 
-        print("\nОценки Δ всех переменных:")
+        report.add("\nОценки Δ всех переменных:")
+        deltas = []
         for j in range(variable_count):
             delta = 0.0 if j in basis else tableau[-1, j]
-            print(f"{variable_names[j]}: {delta:.4f}", end="    ")
-        print()
+            deltas.append(f"{variable_names[j]}: {delta:.4f}")
+        report.add("    ".join(deltas))
 
-    def print_equations() -> None:
-        print("\nСистема уравнений текущего базиса:")
+    def append_equations() -> None:
+        equations = []
         for i in range(row_count):
             terms = []
             for j in range(variable_count):
@@ -92,7 +110,12 @@ def run_simplex_tableau(
             equation = f"{variable_names[basis[i]]} = {tableau[i, -1]:.4f}"
             if terms:
                 equation += " - " + " - ".join(terms)
-            print(equation)
+            equations.append(equation)
+        report.add_formatted_system(
+            equations,
+            format_system_of_equations(equations),
+            heading="Система уравнений текущего базиса:",
+        )
 
     for iteration in range(1, max_iterations + 1):
         basic_costs = np.array([costs[index] for index in basis])
@@ -103,33 +126,33 @@ def run_simplex_tableau(
         tableau[-1, :-1] = reduced
         tableau[-1, -1] = objective_value
 
-        print(f"\n\n{title.upper()}. ИТЕРАЦИЯ №{iteration}")
-        print_table(iteration)
-        print_equations()
+        report.add(f"\n\n{title.upper()}. ИТЕРАЦИЯ №{iteration}")
+        append_table(iteration)
+        append_equations()
 
         candidates = [j for j in non_basis if tableau[-1, j] < -eps]
         if not candidates:
-            print("\nВсе оценки Δ неотрицательны.")
-            print("Получено оптимальное решение.")
+            report.add("\nВсе оценки Δ неотрицательны.")
+            report.add("Получено оптимальное решение.")
             return tableau, basis, non_basis
 
         entering = min(candidates, key=lambda j: tableau[-1, j])
-        print(f"\nРазрешающий столбец: {variable_names[entering]}")
-        print(f"Оценка Δ = {tableau[-1, entering]:.4f}")
+        report.add(f"\nРазрешающий столбец: {variable_names[entering]}")
+        report.add(f"Оценка Δ = {tableau[-1, entering]:.4f}")
 
         ratios = []
-        print("\nВычисление отношений b_i / a_ij:")
+        report.add("\nВычисление отношений b_i / a_ij:")
         for i in range(row_count):
             coefficient = tableau[i, entering]
             if coefficient > eps:
                 ratio = tableau[i, -1] / coefficient
                 ratios.append((ratio, i))
-                print(
+                report.add(
                     f"Строка {variable_names[basis[i]]}: "
                     f"{tableau[i, -1]:.4f} / {coefficient:.4f} = {ratio:.4f}"
                 )
             else:
-                print(
+                report.add(
                     f"Строка {variable_names[basis[i]]}: "
                     "не подходит (коэффициент <= 0)"
                 )
@@ -141,11 +164,11 @@ def run_simplex_tableau(
         pivot = tableau[leaving, entering]
         leaving_variable = basis[leaving]
 
-        print(
+        report.add(
             f"\nРазрешающая строка: {variable_names[leaving_variable]}"
         )
-        print(f"Разрешающий элемент: {pivot:.4f}")
-        print(
+        report.add(f"Разрешающий элемент: {pivot:.4f}")
+        report.add(
             f"\nИз базиса выходит {variable_names[leaving_variable]}, "
             f"в базис входит {variable_names[entering]}."
         )
@@ -162,14 +185,14 @@ def run_simplex_tableau(
         non_basis[entering_position] = leaving_variable
 
         tableau[np.abs(tableau) < eps] = 0
-        print("\nТаблица после пересчёта:")
-        print_table(iteration + 1)
-        print_equations()
+        report.add("\nТаблица после пересчёта:")
+        append_table(iteration + 1)
+        append_equations()
 
     raise ValueError("Превышено максимальное количество итераций.")
 
 
-def solve_simplex(
+def _solve_simplex_impl(
     A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
@@ -177,6 +200,7 @@ def solve_simplex(
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
     *,
+    report: StepReport,
     return_details: bool = False,
 ) -> np.matrix | tuple[np.matrix, list[int], np.ndarray, np.ndarray]:
     """Решить задачу линейного программирования обычным симплекс-методом."""
@@ -205,30 +229,41 @@ def solve_simplex(
     basis = list(range(n, n + m))
     variable_names = [f"x{i + 1}" for i in range(n + m)]
 
-    print("\nИСХОДНАЯ ЗАДАЧА")
-    print("\nЦелевая функция:")
-    print(
+    report.add("\nИСХОДНАЯ ЗАДАЧА")
+    report.add("\nЦелевая функция:")
+    report.add(
         "F = "
         + " + ".join(f"({original_c[j]:g})*x{j + 1}" for j in range(n))
         + f" -> {sense}"
     )
-    print("\nОграничения:")
+    constraints = []
     for i in range(m):
         terms = " + ".join(f"({A[i, j]:g})*x{j + 1}" for j in range(n))
-        print(f"{terms} <= {b[i]:g}")
+        constraints.append(f"{terms} <= {b[i]:g}")
+    report.add_formatted_system(
+        constraints,
+        format_system_of_equations(constraints),
+        heading="Ограничения:",
+    )
 
-    print("\nДобавляем базисные переменные:")
+    augmented_constraints = []
     for i in range(m):
         terms = " + ".join(f"({A[i, j]:g})*x{j + 1}" for j in range(n))
-        print(f"{terms} + x{n + i + 1} = {b[i]:g}")
+        augmented_constraints.append(f"{terms} + x{n + i + 1} = {b[i]:g}")
+    report.add_formatted_system(
+        augmented_constraints,
+        format_system_of_equations(augmented_constraints),
+        heading="Добавляем базисные переменные:",
+    )
 
     full_costs = np.zeros(n + m)
     full_costs[:n] = work_c
 
-    tableau, basis, non_basis = run_simplex_tableau(
+    tableau, basis, non_basis = _run_simplex_tableau_impl(
         tableau,
         basis,
         full_costs,
+        report,
         variable_names,
         title="Симплекс-метод",
         eps=eps,
@@ -240,10 +275,10 @@ def solve_simplex(
 
     objective_value = float(np.dot(original_c, solution[:n]))
 
-    print("\n\nИТОГОВЫЙ РЕЗУЛЬТАТ")
-    print("-" * 40)
-    print("x* = (" + ", ".join(f"{value:g}" for value in solution) + ")")
-    print(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
+    report.add("\n\nИТОГОВЫЙ РЕЗУЛЬТАТ")
+    report.add("-" * 40)
+    report.add("x* = (" + ", ".join(f"{value:g}" for value in solution) + ")")
+    report.add(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
 
     alternate_solution = None
     zero_delta_found = False
@@ -288,13 +323,13 @@ def solve_simplex(
 
     if alternate_solution is not None:
         alternate_value = float(np.dot(original_c, alternate_solution[:n]))
-        print("\nНайдено альтернативное оптимальное решение:")
-        print("x** = (" + ", ".join(f"{value:g}" for value in alternate_solution) + ")")
-        print(f"F = {alternate_value:g}")
+        report.add("\nНайдено альтернативное оптимальное решение:")
+        report.add("x** = (" + ", ".join(f"{value:g}" for value in alternate_solution) + ")")
+        report.add(f"F = {alternate_value:g}")
     elif zero_delta_found:
-        print("\nОбнаружена нулевая оценка Δ, но другой допустимый вектор не найден.")
+        report.add("\nОбнаружена нулевая оценка Δ, но другой допустимый вектор не найден.")
     else:
-        print("\nАльтернативных оптимальных решений по нулевым оценкам Δ не обнаружено.")
+        report.add("\nАльтернативных оптимальных решений по нулевым оценкам Δ не обнаружено.")
 
     solution_matrix = np.matrix(solution[:n].reshape(1, -1))
     if return_details:
@@ -306,3 +341,52 @@ def solve_simplex(
             augmented_A,
         )
     return np.matrix(solution.reshape(1, -1))
+
+
+def run_simplex_tableau(
+    tableau: np.ndarray,
+    basis: list[int],
+    costs: np.ndarray,
+    variable_names: list[str] | None = None,
+    title: str = "Симплекс-метод",
+    eps: float = 1e-10,
+    max_iterations: int = 1000,
+) -> tuple[tuple[np.ndarray, list[int], list[int]], str]:
+    report = StepReport()
+    result = _run_simplex_tableau_impl(
+        tableau,
+        basis,
+        costs,
+        report,
+        variable_names,
+        title,
+        eps,
+        max_iterations,
+    )
+    return result, report.get_text()
+
+
+def solve_simplex(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+    *,
+    return_details: bool = False,
+) -> tuple[
+    np.matrix | tuple[np.matrix, list[int], np.ndarray, np.ndarray], str
+]:
+    report = StepReport()
+    result = _solve_simplex_impl(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        report=report,
+        return_details=return_details,
+    )
+    return result, report.get_text()

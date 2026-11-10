@@ -4,28 +4,27 @@ import numpy as np
 import numpy.typing as npt
 
 from ..problem import Sense
-from .canonical_form import get_canonical_matrices
-from .simplex import (
-    ConstraintSign,
-    VariableConstraint,
-    run_simplex_tableau,
-)
+from .canonical_form import make_canonical
+from .simplex import ConstraintSign, VariableConstraint, _run_simplex_tableau_impl
+from .steps import StepReport
 
 
-def solve_artificial_basis(
+def _solve_artificial_basis_impl(
     A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
+    *,
+    report: StepReport,
 ) -> np.matrix:
     """Решить задачу методом искусственного базиса."""
     eps = 1e-10
 
     # 1. Приведение задачи к канонической форме.
-    print("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
-    A, b, c, decision_count = get_canonical_matrices(
+    report.add("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
+    A, b, c, decision_count = make_canonical(
         A,
         b,
         c,
@@ -40,25 +39,25 @@ def solve_artificial_basis(
 
     m, n = A.shape
 
-    print("\nМатрица A:")
-    print(A)
-    print("\nВектор b:")
-    print(b)
-    print("\nЦелевая функция:")
-    print(c)
+    report.add("\nМатрица A:")
+    report.add(A)
+    report.add("\nВектор b:")
+    report.add(b)
+    report.add("\nЦелевая функция:")
+    report.add(c)
 
     # 2. Делаем правые части неотрицательными.
-    print("\nПРИВЕДЕНИЕ ПРАВЫХ ЧАСТЕЙ К НЕОТРИЦАТЕЛЬНОМУ ВИДУ")
+    report.add("\nПРИВЕДЕНИЕ ПРАВЫХ ЧАСТЕЙ К НЕОТРИЦАТЕЛЬНОМУ ВИДУ")
     for i in range(m):
         if b[i] < -eps:
             A[i, :] *= -1
             b[i] *= -1
-            print(f"Уравнение {i + 1} умножено на -1.")
+            report.add(f"Уравнение {i + 1} умножено на -1.")
 
     b[np.abs(b) < eps] = 0
 
     # 3. Добавляем искусственные переменные и формируем начальный базис.
-    print("\nДОБАВЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
+    report.add("\nДОБАВЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
     total_columns = n + m
     tableau = np.zeros((m + 1, total_columns + 1))
     tableau[:m, :n] = A
@@ -68,19 +67,20 @@ def solve_artificial_basis(
     basis = list(range(n, total_columns))
     names = [f"x{i + 1}" for i in range(total_columns)]
 
-    print("Добавлены искусственные переменные:")
-    print(", ".join(names[n:]))
+    report.add("Добавлены искусственные переменные:")
+    report.add(", ".join(names[n:]))
 
     # 4. Первая фаза: минимизируем сумму искусственных переменных,
     # что эквивалентно максимизации её отрицательного значения.
-    print("\nЭТАП 1. ВСПОМОГАТЕЛЬНАЯ ЗАДАЧА")
+    report.add("\nЭТАП 1. ВСПОМОГАТЕЛЬНАЯ ЗАДАЧА")
     phase_one_costs = np.zeros(total_columns)
     phase_one_costs[n:] = -1
 
-    tableau, basis, _ = run_simplex_tableau(
+    tableau, basis, _ = _run_simplex_tableau_impl(
         tableau,
         basis,
         phase_one_costs,
+        report,
         names,
         title="Первый этап",
         eps=eps,
@@ -97,11 +97,11 @@ def solve_artificial_basis(
             "искусственные переменные не удалось обнулить."
         )
 
-    print("\nВспомогательная задача решена.")
-    print("Сумма искусственных переменных равна нулю.")
+    report.add("\nВспомогательная задача решена.")
+    report.add("Сумма искусственных переменных равна нулю.")
 
     # 5. Удаляем искусственные переменные из базиса.
-    print("\nУДАЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
+    report.add("\nУДАЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
     rows_to_remove = []
 
     for i in range(len(basis)):
@@ -144,14 +144,15 @@ def solve_artificial_basis(
     names = names[:n]
     tableau[np.abs(tableau) < eps] = 0
 
-    print("\nИскусственные переменные удалены.")
+    report.add("\nИскусственные переменные удалены.")
 
     # 6. Вторая фаза: решаем исходную задачу тем же симплекс-алгоритмом.
-    print("\nЭТАП 2. РЕШЕНИЕ ИСХОДНОЙ ЗАДАЧИ")
-    tableau, basis, _ = run_simplex_tableau(
+    report.add("\nЭТАП 2. РЕШЕНИЕ ИСХОДНОЙ ЗАДАЧИ")
+    tableau, basis, _ = _run_simplex_tableau_impl(
         tableau,
         basis,
         c,
+        report,
         names,
         title="Второй этап",
         eps=eps,
@@ -165,17 +166,38 @@ def solve_artificial_basis(
     solution[np.abs(solution) < eps] = 0
     objective_value = float(np.dot(c, solution))
 
-    # get_canonical_matrices переводит min в max, меняя знак c.
+    # make_canonical переводит min в max, меняя знак c.
     if sense == "min":
         objective_value = -objective_value
 
-    print("\nИТОГОВОЕ РЕШЕНИЕ")
-    print("-" * 40)
-    print(
+    report.add("\nИТОГОВОЕ РЕШЕНИЕ")
+    report.add("-" * 40)
+    report.add(
         "x* = ("
         + ", ".join(f"{value:g}" for value in solution[:decision_count])
         + ")"
     )
-    print(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
+    report.add(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
 
     return np.matrix(solution[:decision_count].reshape(1, -1))
+
+
+def solve_artificial_basis(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+) -> tuple[np.matrix, str]:
+    report = StepReport()
+    result = _solve_artificial_basis_impl(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        report=report,
+    )
+    return result, report.get_text()

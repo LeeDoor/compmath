@@ -1,6 +1,4 @@
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from server import solve_task
@@ -8,10 +6,7 @@ from server import solve_task
 
 class DualSimplexTests(unittest.TestCase):
     def run_solver(self, *args, **kwargs):
-        output = StringIO()
-        with redirect_stdout(output):
-            result = solve_dual_simplex(*args, **kwargs)
-        return result, output.getvalue()
+        return solve_dual_simplex(*args, **kwargs)
 
     def test_dual_pivots_by_maximum_delta_over_negative_row_coefficient(self):
         result, output = self.run_solver(
@@ -61,6 +56,11 @@ class DualSimplexTests(unittest.TestCase):
         self.assertIn("x2", header)
         self.assertNotIn("x3", header)
         self.assertIn("x3", first_row)
+        delta_row = next(
+            line for line in initial_table.splitlines()
+            if line.strip().startswith("Δ")
+        )
+        self.assertEqual(len(delta_row.split()), 3)
 
     def test_nonnegative_basic_rhs_requests_regular_simplex(self):
         result, output = self.run_solver([[1]], [4], [3])
@@ -78,6 +78,22 @@ class DualSimplexTests(unittest.TestCase):
         self.assertIn("применяем двойственный симплекс-метод", output)
         self.assertIn("x* = (2)", result)
         self.assertIn("Значение целевой функции: 2", result)
+
+    def test_free_variable_uses_canonical_matrix_and_restores_original_value(self):
+        result, output = self.run_solver(
+            [[1]],
+            [2],
+            [-1],
+            "max",
+            [">="],
+            ["free"],
+        )
+
+        self.assertIn("Система после приведения к канонической форме:", output)
+        self.assertIn("x'1", output)
+        self.assertIn("x''1", output)
+        self.assertIn("x* = (2)", result)
+        self.assertIn("Значение целевой функции: -2", result)
 
     def test_primal_simplex_finishes_when_feasibility_is_restored(self):
         result, output = self.run_solver(

@@ -57,6 +57,7 @@ class WebApiTests(unittest.TestCase):
             TASK_BY_ID["simplex"],
             {"variables": "3", "constraints": "4"},
         )
+        self.assertIn('data-storage-key="simplex"', page)
         self.assertIn('name="a_3_2"', page)
         self.assertIn('name="b_3"', page)
         self.assertIn('class="back-button" href="/"', page)
@@ -69,6 +70,15 @@ class WebApiTests(unittest.TestCase):
         self.assertNotIn('name="a_4_0"', page)
         self.assertIn('data-resize-url="/task/simplex"', page)
         self.assertNotIn("Обновить систему", page)
+
+    def test_task_forms_use_distinct_storage_keys(self):
+        simplex_page = render_task_page(TASK_BY_ID["simplex"], {})
+        canonical_page = render_task_page(TASK_BY_ID["canonical_form"], {})
+        transport_page = render_task_page(TASK_BY_ID["transport"], {})
+
+        self.assertIn('data-storage-key="simplex"', simplex_page)
+        self.assertIn('data-storage-key="canonical_form"', canonical_page)
+        self.assertIn('data-storage-key="transport"', transport_page)
 
     def test_constraint_controls_are_not_added_to_optimality_task(self):
         page = render_task_page(
@@ -151,11 +161,126 @@ class WebApiTests(unittest.TestCase):
         self.assertNotIn("[[2.", page)
         self.assertNotIn("<textarea", page)
 
-    def test_non_transport_result_keeps_textarea(self):
-        page = render_task_page(TASK_BY_ID["simplex"], {}, result="Результат")
+    def test_simplex_result_uses_html_headings_and_table(self):
+        result = solve_task(
+            {
+                "task_id": "simplex",
+                "A": [[1]],
+                "b": [1],
+                "c": [-1],
+                "sense": "max",
+            }
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertTrue(result.formatted_systems)
+        self.assertIn('<div class="equation-system"', page)
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1</h3>",
+            page,
+        )
+        self.assertIn('<table class="algorithm-result-table">', page)
+        self.assertIn('<th scope="col">Базис</th>', page)
+        self.assertNotIn("<textarea", page)
+
+    def test_linear_equation_system_uses_math_html_formatting(self):
+        result = "\n".join(
+            [
+                "Система уравнений текущего базиса:",
+                "x'1 = 2 - 0.5*x''1",
+                "x2 = 3 & 4",
+            ]
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertIn('<div class="equation-system"', page)
+        self.assertIn('<var>x</var><sup>′</sup><sub>1</sub>', page)
+        self.assertIn('<var>x</var><sup>″</sup><sub>1</sub>', page)
+        self.assertIn("3 &amp; 4", page)
+        self.assertEqual(page.count('class="equation-system-row"'), 2)
+
+    def test_simplex_explanatory_sections_are_not_added_to_table(self):
+        result = "\n".join(
+            [
+                "СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1",
+                "Симплекс-таблица:",
+                f"{'Базис':>8}{'x3':>12}{'x4':>12}{'b':>12}",
+                f"{'x1':>8}{0.09259:12.4g}{-0.01852:12.4g}{0.07407:12.4g}",
+                f"{'x2':>8}{-0.01852:12.4g}{0.2037:12.4g}{0.1852:12.4g}",
+                f"{'Δ':>8}{0.1296:12.4g}{0.5741:12.4g}",
+                "Оценки Δ всех переменных:",
+                "x1: 0.0000    x2: 0.0000    x3: 0.1296    x4: 0.5741",
+                "Система уравнений текущего базиса:",
+                "x1 = 0.07407",
+            ]
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+        table = page.split(
+            '<table class="algorithm-result-table">', 1
+        )[1].split("</table>", 1)[0]
+
+        self.assertNotIn("Оценки", table)
+        self.assertNotIn("Система уравнений", table)
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">Оценки Δ всех переменных</h3>',
+            page,
+        )
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">Система уравнений текущего базиса</h3>',
+            page,
+        )
+
+    def test_artificial_basis_keeps_textarea(self):
+        page = render_task_page(
+            TASK_BY_ID["artificial_basis"], {}, result="Результат"
+        )
 
         self.assertIn("<textarea readonly", page)
-        self.assertNotIn("transport-result-table", page)
+
+    def test_dual_simplex_result_uses_html_table(self):
+        result = solve_task(
+            {
+                "task_id": "dual_simplex",
+                "A": [[1, 1]],
+                "b": [2],
+                "c": [-2, -1],
+                "sense": "max",
+                "constraint_signs": [">="],
+                "variable_constraints": ["nonnegative", "nonnegative"],
+            }
+        )
+        page = render_task_page(TASK_BY_ID["dual_simplex"], {}, result=result)
+
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "Симплекс-таблица, итерация 1</h3>",
+            page,
+        )
+        self.assertIn('<div class="equation-system"', page)
+        self.assertIn('<table class="algorithm-result-table">', page)
+        self.assertNotIn("<textarea", page)
+
+    def test_form_result_text_uses_html_and_escapes_contents(self):
+        page = render_task_page(
+            TASK_BY_ID["canonical_form"],
+            {},
+            result=(
+                "Приведение к канонической форме:\n"
+                "1) Преобразование <x>."
+            ),
+        )
+
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "Приведение к канонической форме</h3>",
+            page,
+        )
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">1) Преобразование &lt;x&gt;.</h3>',
+            page,
+        )
+        self.assertNotIn("<textarea", page)
 
     def test_html_form_payload_includes_signs_and_variable_constraints(self):
         payload = _form_payload(

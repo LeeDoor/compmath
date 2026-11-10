@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
 import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io
 import json
 import logging
 import math
@@ -14,19 +12,23 @@ import mimetypes
 from pathlib import Path
 import re
 import sys
-from threading import Lock
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
-from linear_programming.math_tasks.canonical_form import to_canonical_form
+from linear_programming.math_tasks.canonical_form import run_canonical_algorithm
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks.optimality import check_optimality
 from linear_programming.math_tasks.primal_dual import solve_primal_dual
 from linear_programming.math_tasks.simplex import solve_simplex
+from linear_programming.math_tasks.steps import FormattedSystem, ReportText
 from linear_programming.math_tasks.standard_form import to_standard_form
 from linear_programming.math_tasks.transport import solve_transport
 from linear_programming.problem import create_problem
+from linear_programming.display_methods import (
+    format_math_expression,
+    format_system_of_equations,
+)
 
 
 WEB_ROOT = Path(__file__).parent / "web"
@@ -76,7 +78,6 @@ CONSTRAINT_TASKS = frozenset(
         "standard_form",
     }
 )
-SOLVER_OUTPUT_LOCK = Lock()
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -138,15 +139,23 @@ def _validate_choices(
 
 
 def _run_solver(function: Any, *args: Any) -> str:
-    output = io.StringIO()
-    with SOLVER_OUTPUT_LOCK, redirect_stdout(output):
-        result = function(*args)
+    result = function(*args)
+    if (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[1], str)
+    ):
+        value, steps = result
+        returned = value if isinstance(value, str) else (
+            str(value) if value is not None else ""
+        )
+        text = "\n\n".join(part for part in (steps, returned) if part)
+        return ReportText(text, getattr(steps, "formatted_systems", ()))
 
-    printed = output.getvalue().strip()
     returned = result if isinstance(result, str) else (
         str(result) if result is not None else ""
     )
-    return "\n\n".join(part for part in (printed, returned) if part)
+    return returned
 
 
 def solve_task(payload: Any) -> str:
@@ -209,7 +218,7 @@ def solve_task(payload: Any) -> str:
         "simplex": solve_simplex,
         "dual_simplex": solve_dual_simplex,
         "artificial_basis": solve_artificial_basis,
-        "canonical_form": to_canonical_form,
+        "canonical_form": run_canonical_algorithm,
         "standard_form": to_standard_form,
     }[task_id]
     return _run_solver(solver, *solver_args)
@@ -430,6 +439,156 @@ def _render_transport_result(result: str) -> str:
     return "".join(rendered)
 
 
+def _render_algorithm_result(
+    result: str,
+    formatted_systems: tuple[FormattedSystem, ...] = (),
+) -> str:
+    """Render plain solver output as semantic HTML and tables."""
+    lines = [_ANSI_ESCAPE.sub("", line).rstrip() for line in result.splitlines()]
+    rendered: list[str] = []
+    index = 0
+
+    def split_row(line: str) -> list[str]:
+        return [cell.strip() for cell in re.split(r"\s{2,}", line.strip())]
+
+    def render_table(header: list[str], rows: list[list[str]], delta: list[str]) -> str:
+        table = [
+            '<div class="algorithm-result-scroll">'
+            '<table class="algorithm-result-table"><thead><tr>'
+        ]
+        table.extend(
+            f'<th scope="col">{html.escape(cell)}</th>' for cell in header
+        )
+        table.append("</tr></thead><tbody>")
+        for row in rows:
+            table.append("<tr>")
+            table.append(f'<th scope="row">{html.escape(row[0])}</th>')
+            table.extend(
+                f"<td>{html.escape(cell)}</td>" for cell in row[1:]
+            )
+            table.append("</tr>")
+        table.append("</tbody>")
+        if delta:
+            table.append("<tfoot><tr>")
+            table.append(f'<th scope="row">{html.escape(delta[0])}</th>')
+            table.extend(
+                f"<td>{html.escape(cell)}</td>" for cell in delta[1:]
+            )
+            table.append("</tr></tfoot>")
+        table.append("</table></div>")
+        return "".join(table)
+
+    def is_rule(line: str) -> bool:
+        return re.fullmatch(r"[-=]{5,}", line.strip()) is not None
+
+    def is_heading(line: str) -> bool:
+        text = line.strip()
+        return (
+            (text.endswith(":") and len(text) <= 180)
+            or re.match(r"^\d+\)\s+", text) is not None
+            or "ИТЕРАЦИЯ" in text.upper()
+            or "СИМПЛЕКСНАЯ ТАБЛИЦА" in text.upper()
+            or text.upper() in ("ИТОГОВЫЙ РЕЗУЛЬТАТ", "ИТОГОВОЕ РЕШЕНИЕ")
+        )
+
+    def is_system_heading(line: str) -> bool:
+        text = line.strip().rstrip(":")
+        return (
+            text.startswith("Система уравнений")
+            or text.startswith("Система после приведения")
+            or text in ("Ограничения", "Добавляем базисные переменные")
+        )
+
+    def is_equation(line: str) -> bool:
+        return "=" in line and "->" not in line
+
+    while index < len(lines):
+        text = lines[index].strip()
+        if not text or is_rule(text):
+            index += 1
+            continue
+
+        header = split_row(lines[index])
+        if header and header[0] == "Базис":
+            rows = []
+            delta = []
+            cursor = index + 1
+            while cursor < len(lines):
+                row_text = lines[cursor].strip()
+                if not row_text:
+                    cursor += 1
+                    continue
+                if is_rule(row_text):
+                    cursor += 1
+                    continue
+
+                cells = split_row(lines[cursor])
+                if cells and cells[0] == "Δ":
+                    if len(cells) == len(header) - 1:
+                        cells.append("")
+                    if len(cells) == len(header):
+                        delta = cells
+                        cursor += 1
+                        continue
+                if len(cells) == len(header):
+                    rows.append(cells)
+                    cursor += 1
+                    continue
+                break
+
+            if rows:
+                rendered.append(render_table(header, rows, delta))
+                index = cursor
+                continue
+
+        if is_heading(text):
+            rendered.append(
+                '<h3 class="algorithm-result-heading">'
+                f"{html.escape(text.rstrip(':'))}</h3>"
+            )
+            index += 1
+            if not is_system_heading(text):
+                continue
+
+            equations = []
+            while index < len(lines):
+                equation = lines[index].strip()
+                if not equation:
+                    index += 1
+                    continue
+                if equation.startswith("F =") and "->" in equation:
+                    rendered.append(
+                        '<p class="algorithm-result-text math-expression">'
+                        f"{format_math_expression(equation)}</p>"
+                    )
+                    index += 1
+                    continue
+                if not is_equation(equation):
+                    break
+                equations.append(equation)
+                index += 1
+            if equations:
+                formatted = next(
+                    (
+                        system.html
+                        for system in formatted_systems
+                        if system.equations == tuple(equations)
+                    ),
+                    None,
+                )
+                rendered.append(
+                    formatted or format_system_of_equations(equations)
+                )
+            continue
+        else:
+            rendered.append(
+                f'<p class="algorithm-result-text">{html.escape(text)}</p>'
+            )
+        index += 1
+
+    return '<section class="algorithm-result">' + "".join(rendered) + "</section>"
+
+
 def render_task_page(
     task: dict[str, Any],
     values: dict[str, str],
@@ -438,7 +597,7 @@ def render_task_page(
 ) -> str:
     """Render a plain HTML condition form, optionally with its result."""
     task_id = task["id"]
-    storage_key = task["input"]
+    storage_key = task_id
     form = [
         f'<form method="post" action="/solve-page" data-storage-key="{storage_key}" '
         f'data-resize-url="/task/{task_id}">',
@@ -594,11 +753,18 @@ def render_task_page(
         form.append('<h2>Результат</h2>')
         if task_id == "transport":
             form.append(_render_transport_result(result))
-        else:
+        elif task_id == "artificial_basis":
             form.append(
                 '<textarea readonly rows="18" cols="90">'
                 + html.escape(clean_result)
                 + "</textarea>"
+            )
+        else:
+            form.append(
+                _render_algorithm_result(
+                    clean_result,
+                    getattr(result, "formatted_systems", ()),
+                )
             )
 
     return (

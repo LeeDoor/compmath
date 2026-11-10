@@ -9,7 +9,7 @@ import numpy as np
 from linear_programming.display_methods.display_max import display_max
 from linear_programming.display_methods.display_min import display_min
 from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
-from linear_programming.math_tasks.canonical_form import to_canonical_form
+from linear_programming.math_tasks.canonical_form import run_canonical_algorithm
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks._stub import (
     describe_linear_problem,
@@ -23,7 +23,7 @@ from linear_programming.math_tasks.transport import solve_transport
 from linear_programming.problem import LinearProblem, create_problem
 
 
-TaskResult = str | np.matrix
+TaskResult = str | np.matrix | tuple[object, str]
 
 
 def _read_number_list(prompt: str) -> list[int | float]:
@@ -153,6 +153,11 @@ def _get_cached_input(
 
 
 def _show_result(result: TaskResult) -> None:
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], str):
+        value, steps = result
+        if steps:
+            print(steps)
+        result = value
     print(f"\033[92mРезультат выполнения: {result}\033[0m")
 
 
@@ -223,7 +228,7 @@ def main() -> None:
         7: (
             "Приведение к канонической форме",
             "linear",
-            lambda problem: to_canonical_form(
+            lambda problem: run_canonical_algorithm(
                 problem.A, problem.b, problem.c, problem.sense
             ),
         ),

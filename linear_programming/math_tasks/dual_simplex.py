@@ -3,89 +3,68 @@
 import numpy as np
 import numpy.typing as npt
 
-from ..problem import Sense, create_problem
-from .simplex import ConstraintSign, VariableConstraint
+from ..display_methods import format_system_of_equations
+from ..problem import Sense
+from .canonical_form import make_canonical
+from .simplex import ConstraintSign, VariableConstraint, append_simplex_table
+from .steps import StepReport
 
 
 _TOLERANCE = 1e-10
 _MAX_ITERATIONS = 1000
 
 
-def solve_dual_simplex(
+def _solve_dual_simplex_impl(
     A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
+    *,
+    report: StepReport,
 ) -> str:
     """Solve an LP with dual simplex when its canonical basis allows it."""
-    problem = create_problem(A, b, c, sense)
-    matrix = np.asarray(problem.A, dtype=float)
-    rhs = np.asarray(problem.b, dtype=float).reshape(-1)
-    original_objective = np.asarray(problem.c, dtype=float).reshape(-1)
-    constraint_count, original_variable_count = matrix.shape
-
-    signs = (
-        ["<="] * constraint_count
-        if constraint_signs is None
-        else list(constraint_signs)
+    (
+        canonical_matrix,
+        canonical_rhs,
+        objective,
+        decision_count,
+    ) = make_canonical(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
     )
-    if len(signs) != constraint_count or any(
-        sign not in ("<=", ">=", "=") for sign in signs
-    ):
-        raise ValueError(
-            "constraint_signs должны задавать знак '<=', '>=' или '=' "
-            "для каждого ограничения."
-        )
+    constraint_count, variable_count = canonical_matrix.shape
+    original_objective = np.asarray(c, dtype=float).reshape(-1)
+
     variable_options = (
-        ["nonnegative"] * original_variable_count
+        ["nonnegative"] * len(original_objective)
         if variable_constraints is None
         else list(variable_constraints)
     )
-    if len(variable_options) != original_variable_count or any(
-        option not in ("nonnegative", "free") for option in variable_options
-    ):
-        raise ValueError(
-            "variable_constraints должны задавать 'nonnegative' или 'free' "
-            "для каждой переменной."
-        )
-
-    transformed_columns = []
-    transformed_objective = []
     variable_mapping: list[tuple[int, int | None]] = []
-    for column, option in enumerate(variable_options):
+    names = []
+    transformed_index = 0
+    for index, option in enumerate(variable_options):
         if option == "free":
-            first = len(transformed_columns)
-            transformed_columns.extend((matrix[:, column], -matrix[:, column]))
-            transformed_objective.extend(
-                (original_objective[column], -original_objective[column])
-            )
-            variable_mapping.append((first, first + 1))
+            variable_mapping.append((transformed_index, transformed_index + 1))
+            names.extend((f"x'{index + 1}", f"x''{index + 1}"))
+            transformed_index += 2
         else:
-            first = len(transformed_columns)
-            transformed_columns.append(matrix[:, column])
-            transformed_objective.append(original_objective[column])
-            variable_mapping.append((first, None))
-
-    transformed_matrix = np.column_stack(transformed_columns)
-    objective = np.asarray(transformed_objective, dtype=float)
-    if problem.sense == "min":
-        objective = -objective
-
-    transformed_variable_count = transformed_matrix.shape[1]
-    extra_count = sum(sign != "=" for sign in signs)
-    canonical_matrix = np.zeros(
-        (constraint_count, transformed_variable_count + extra_count)
+            variable_mapping.append((transformed_index, None))
+            names.append(f"x{index + 1}")
+            transformed_index += 1
+    names.extend(
+        f"x{index}"
+        for index in range(
+            len(original_objective) + 1,
+            len(original_objective) + variable_count - decision_count + 1,
+        )
     )
-    canonical_matrix[:, :transformed_variable_count] = transformed_matrix
-    canonical_rhs = rhs.copy()
-    extra_column = transformed_variable_count
-    for row, sign in enumerate(signs):
-        if sign == "=":
-            continue
-        canonical_matrix[row, extra_column] = 1 if sign == "<=" else -1
-        extra_column += 1
 
     column_support = np.abs(canonical_matrix) > _TOLERANCE
     basis = []
@@ -95,7 +74,7 @@ def solve_dual_simplex(
         )
         if not len(candidates):
             raise ValueError("Нет базиса. Используйте МИБ.")
-        supplemental = candidates[candidates >= transformed_variable_count]
+        supplemental = candidates[candidates >= decision_count]
         basis.append(int(supplemental[0] if len(supplemental) else candidates[0]))
 
     for row, basic_variable in enumerate(basis):
@@ -103,10 +82,7 @@ def solve_dual_simplex(
         canonical_matrix[row, :] /= coefficient
         canonical_rhs[row] /= coefficient
 
-    row_count, variable_count = canonical_matrix.shape
-    augmented_objective = np.pad(
-        objective, (0, variable_count - transformed_variable_count)
-    )
+    row_count = constraint_count
 
     def format_expression(coefficients: np.ndarray, variable_names: list[str]) -> str:
         terms = []
@@ -122,52 +98,34 @@ def solve_dual_simplex(
                 terms.append(f" - {term}" if value < 0 else f" + {term}")
         return "".join(terms) or "0"
 
-    names = [f"x{index + 1}" for index in range(variable_count)]
-    print("\nСистема после приведения к канонической форме:")
-    print(f"F = {format_expression(augmented_objective, names)} -> max")
-    for row, value in zip(canonical_matrix, canonical_rhs):
-        print(f"{format_expression(row, names)} = {value:g}")
+    report.add("\nСистема после приведения к канонической форме:")
+    report.add(f"F = {format_expression(objective, names)} -> max")
+    equations = [
+        f"{format_expression(row, names)} = {value:g}"
+        for row, value in zip(canonical_matrix, canonical_rhs)
+    ]
+    report.add_formatted_system(
+        equations,
+        format_system_of_equations(equations),
+    )
 
     dual_candidates = np.flatnonzero(canonical_rhs < -_TOLERANCE)
     if not len(dual_candidates):
         return "Нет нужды в двойственном симплексе. Используйте обычный симплекс-метод."
 
-    print(
+    report.add(
         "После нормализации базисных переменных найдены отрицательные b; "
         "применяем двойственный симплекс-метод."
     )
     tableau = np.zeros((row_count + 1, variable_count + 1))
     tableau[:row_count, :variable_count] = canonical_matrix
     tableau[:row_count, -1] = canonical_rhs
-    tableau[-1, :variable_count] = -augmented_objective
+    tableau[-1, :variable_count] = -objective
     for row, basic_variable in enumerate(basis):
         tableau[-1, :] += (
-            augmented_objective[basic_variable] * tableau[row, :]
+            objective[basic_variable] * tableau[row, :]
         )
     tableau[np.abs(tableau) < _TOLERANCE] = 0
-
-    def print_table(title: str) -> None:
-        nonbasic = [
-            column
-            for column in range(variable_count)
-            if column not in basis
-        ]
-        print(f"\n{title}:")
-        print(
-            f"{'Базис':>8}"
-            + "".join(f"{names[column]:>12}" for column in nonbasic)
-            + f"{'b':>12}"
-        )
-        for row in range(row_count):
-            print(
-                f"{names[basis[row]]:>8}"
-                + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
-                + f"{tableau[row, -1]:12.4g}"
-            )
-        print(
-            f"{'Δ':>8}"
-            + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
-        )
 
     def pivot(row: int, column: int) -> None:
         element = tableau[row, column]
@@ -182,7 +140,13 @@ def solve_dual_simplex(
         tableau[np.abs(tableau) < _TOLERANCE] = 0
 
     for iteration in range(1, _MAX_ITERATIONS + 1):
-        print_table(f"Симплекс-таблица, итерация {iteration}")
+        append_simplex_table(
+            report,
+            tableau,
+            basis,
+            names,
+            f"Симплекс-таблица, итерация {iteration}",
+        )
         negative_rhs = np.flatnonzero(tableau[:row_count, -1] < -_TOLERANCE)
         negative_delta = np.flatnonzero(tableau[-1, :-1] < -_TOLERANCE)
         if not len(negative_rhs) and not len(negative_delta):
@@ -205,7 +169,7 @@ def solve_dual_simplex(
                 for column in candidates
             }
             entering = max(candidates, key=ratios.__getitem__)
-            print(
+            report.add(
                 f"Ведущая строка: {leaving + 1}; ведущий столбец: "
                 f"{names[entering]}; Δ/a = {ratios[entering]:g}."
             )
@@ -222,7 +186,7 @@ def solve_dual_simplex(
                 candidates,
                 key=lambda row: tableau[row, -1] / tableau[row, entering],
             )
-            print(
+            report.add(
                 "Все b неотрицательны; завершаем оптимизацию обычным "
                 f"симплекс-шагом. Входит {names[entering]}."
             )
@@ -235,7 +199,7 @@ def solve_dual_simplex(
     for row, variable in enumerate(basis):
         if variable < variable_count:
             transformed_solution[variable] = tableau[row, -1]
-    transformed_solution = transformed_solution[:transformed_variable_count]
+    transformed_solution = transformed_solution[:decision_count]
     original_solution = np.asarray(
         [
             transformed_solution[first]
@@ -250,3 +214,24 @@ def solve_dual_simplex(
         + ", ".join(f"{value:g}" for value in original_solution)
         + f")\nЗначение целевой функции: {objective_value:g}"
     )
+
+
+def solve_dual_simplex(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+) -> tuple[str, str]:
+    report = StepReport()
+    result = _solve_dual_simplex_impl(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        report=report,
+    )
+    return result, report.get_text()
