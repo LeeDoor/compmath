@@ -6,19 +6,22 @@ import numpy.typing as npt
 from ..problem import Sense
 from .canonical_form import make_canonical
 from .simplex import ConstraintSign, VariableConstraint
+from .steps import StepReport
 
 
 _TOLERANCE = 1e-10
 _MAX_ITERATIONS = 1000
 
 
-def solve_dual_simplex(
+def _solve_dual_simplex_impl(
     A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
+    *,
+    report: StepReport,
 ) -> str:
     """Solve an LP with dual simplex when its canonical basis allows it."""
     (
@@ -94,16 +97,16 @@ def solve_dual_simplex(
                 terms.append(f" - {term}" if value < 0 else f" + {term}")
         return "".join(terms) or "0"
 
-    print("\nСистема после приведения к канонической форме:")
-    print(f"F = {format_expression(objective, names)} -> max")
+    report.add("\nСистема после приведения к канонической форме:")
+    report.add(f"F = {format_expression(objective, names)} -> max")
     for row, value in zip(canonical_matrix, canonical_rhs):
-        print(f"{format_expression(row, names)} = {value:g}")
+        report.add(f"{format_expression(row, names)} = {value:g}")
 
     dual_candidates = np.flatnonzero(canonical_rhs < -_TOLERANCE)
     if not len(dual_candidates):
         return "Нет нужды в двойственном симплексе. Используйте обычный симплекс-метод."
 
-    print(
+    report.add(
         "После нормализации базисных переменных найдены отрицательные b; "
         "применяем двойственный симплекс-метод."
     )
@@ -117,25 +120,25 @@ def solve_dual_simplex(
         )
     tableau[np.abs(tableau) < _TOLERANCE] = 0
 
-    def print_table(title: str) -> None:
+    def append_table(title: str) -> None:
         nonbasic = [
             column
             for column in range(variable_count)
             if column not in basis
         ]
-        print(f"\n{title}:")
-        print(
+        report.add(f"\n{title}:")
+        report.add(
             f"{'Базис':>8}"
             + "".join(f"{names[column]:>12}" for column in nonbasic)
             + f"{'b':>12}"
         )
         for row in range(row_count):
-            print(
+            report.add(
                 f"{names[basis[row]]:>8}"
                 + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
                 + f"{tableau[row, -1]:12.4g}"
             )
-        print(
+        report.add(
             f"{'Δ':>8}"
             + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
         )
@@ -153,7 +156,7 @@ def solve_dual_simplex(
         tableau[np.abs(tableau) < _TOLERANCE] = 0
 
     for iteration in range(1, _MAX_ITERATIONS + 1):
-        print_table(f"Симплекс-таблица, итерация {iteration}")
+        append_table(f"Симплекс-таблица, итерация {iteration}")
         negative_rhs = np.flatnonzero(tableau[:row_count, -1] < -_TOLERANCE)
         negative_delta = np.flatnonzero(tableau[-1, :-1] < -_TOLERANCE)
         if not len(negative_rhs) and not len(negative_delta):
@@ -176,7 +179,7 @@ def solve_dual_simplex(
                 for column in candidates
             }
             entering = max(candidates, key=ratios.__getitem__)
-            print(
+            report.add(
                 f"Ведущая строка: {leaving + 1}; ведущий столбец: "
                 f"{names[entering]}; Δ/a = {ratios[entering]:g}."
             )
@@ -193,7 +196,7 @@ def solve_dual_simplex(
                 candidates,
                 key=lambda row: tableau[row, -1] / tableau[row, entering],
             )
-            print(
+            report.add(
                 "Все b неотрицательны; завершаем оптимизацию обычным "
                 f"симплекс-шагом. Входит {names[entering]}."
             )
@@ -221,3 +224,24 @@ def solve_dual_simplex(
         + ", ".join(f"{value:g}" for value in original_solution)
         + f")\nЗначение целевой функции: {objective_value:g}"
     )
+
+
+def solve_dual_simplex(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+) -> tuple[str, str]:
+    report = StepReport()
+    result = _solve_dual_simplex_impl(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        report=report,
+    )
+    return result, report.get_text()

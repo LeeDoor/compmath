@@ -4,7 +4,9 @@ import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
 from ..display_methods.display_function import display_function
-from .simplex import ConstraintSign, VariableConstraint, solve_simplex
+from .simplex import ConstraintSign, VariableConstraint, _solve_simplex_impl
+from .steps import StepReport
+
 
 def format_vector(values, prefix):
     parts = [f"{prefix}{i} = {v:g}" for i, v in enumerate(values, start=1)]
@@ -58,12 +60,14 @@ def solution_from_delta(A, c, basis, delta):
     right_side=delta_B+c_B
     return np.linalg.solve(B.T, right_side)
 
-def solve_primal_dual(A: npt.ArrayLike,
+def _solve_primal_dual_impl(A: npt.ArrayLike,
     b: npt.ArrayLike,
     c: npt.ArrayLike,
     sense: Sense = "max",
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
+    *,
+    report: StepReport,
 )->str:
     problem = create_problem(A, b, c, sense)
     A_np = np.asarray(problem.A, dtype=float)
@@ -76,8 +80,8 @@ def solve_primal_dual(A: npt.ArrayLike,
 
     y_names = [f"y{i+1}" for i in range(m)]
     A_dual, b_dual, c_dual, sense_dual = build_dual(A_np, b_np, c_np, sense)
-    print(f"\nДВОЙСТВЕННАЯ ЗАДАЧА:")
-    print(f"g(y) = {format_expression(b_np, y_names)} -> {sense_dual}")
+    report.add(f"\nДВОЙСТВЕННАЯ ЗАДАЧА:")
+    report.add(f"g(y) = {format_expression(b_np, y_names)} -> {sense_dual}")
     
 
     for j in range(n):
@@ -86,26 +90,27 @@ def solve_primal_dual(A: npt.ArrayLike,
         
         rel = ("=" if variable_constraints[j] == "free" 
                else (">=" if sense == "max" else "<="))
-        print(f"  {col_str} {rel} {c_np[j]:g}")
+        report.add(f"  {col_str} {rel} {c_np[j]:g}")
         
 
-    print("\nОграничения на y:")
+    report.add("\nОграничения на y:")
     for i in range(m):
         if constraint_signs[i] == "<=":
-            print(f"  y{i+1} >= 0")
+            report.add(f"  y{i+1} >= 0")
         elif constraint_signs[i] == ">=":
-            print(f"  y{i+1} <= 0")
+            report.add(f"  y{i+1} <= 0")
         else:
-            print(f"  y{i+1} - любое (свободное)")
+            report.add(f"  y{i+1} - любое (свободное)")
 
 
 
     try:
 
-        x, basis, delta, A_simplex = solve_simplex(
+        x, basis, delta, A_simplex = _solve_simplex_impl(
             A_np, b_np, c_np, sense, 
             constraint_signs=constraint_signs, 
             variable_constraints=variable_constraints,
+            report=report,
             return_details=True
         )
     except ValueError as e:
@@ -137,4 +142,25 @@ def solve_primal_dual(A: npt.ArrayLike,
         f"Способ 2 (обратная):  y* = ({y2_str})\n"
         f"f(x*) = g(y*) = {f_val:g}"
     )
+
+
+def solve_primal_dual(
+    A: npt.ArrayLike,
+    b: npt.ArrayLike,
+    c: npt.ArrayLike,
+    sense: Sense = "max",
+    constraint_signs: list[ConstraintSign] | None = None,
+    variable_constraints: list[VariableConstraint] | None = None,
+) -> tuple[str, str]:
+    report = StepReport()
+    result = _solve_primal_dual_impl(
+        A,
+        b,
+        c,
+        sense,
+        constraint_signs,
+        variable_constraints,
+        report=report,
+    )
+    return result, report.get_text()
     

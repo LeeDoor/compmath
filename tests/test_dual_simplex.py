@@ -1,6 +1,4 @@
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from server import solve_task
@@ -8,10 +6,7 @@ from server import solve_task
 
 class DualSimplexTests(unittest.TestCase):
     def run_solver(self, *args, **kwargs):
-        output = StringIO()
-        with redirect_stdout(output):
-            result = solve_dual_simplex(*args, **kwargs)
-        return result, output.getvalue()
+        return solve_dual_simplex(*args, **kwargs)
 
     def test_dual_pivots_by_maximum_delta_over_negative_row_coefficient(self):
         result, output = self.run_solver(

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+from .steps import StepReport
 
 _GRAY = "\033[90m"
 _MAROON = "\033[38;2;128;0;0m"
@@ -50,7 +51,7 @@ def _format_number(value: float) -> str:
 
 
 def _close_problem(
-    costs: np.ndarray, supply: np.ndarray, demand: np.ndarray
+    costs: np.ndarray, supply: np.ndarray, demand: np.ndarray, report: StepReport
 ) -> _ClosedProblem:
     """Balance the transportation problem by adding a dummy row or column."""
     supplier_names = [f"a[{index + 1}]" for index in range(len(supply))]
@@ -64,7 +65,7 @@ def _close_problem(
             costs = np.column_stack((costs, np.zeros(costs.shape[0])))
             demand = np.append(demand, difference)
             consumer_names.append("Фиктивный потребитель")
-            print(
+            report.add(
                 "Задача закрыта: добавлен фиктивный потребитель "
                 f"с потребностью {_format_number(difference)} и нулевыми тарифами."
             )
@@ -73,17 +74,17 @@ def _close_problem(
             costs = np.vstack((costs, np.zeros(costs.shape[1])))
             supply = np.append(supply, difference)
             supplier_names.append("Фиктивный склад")
-            print(
+            report.add(
                 "Задача закрыта: добавлен фиктивный склад "
                 f"с запасом {_format_number(difference)} и нулевыми тарифами."
             )
     else:
-        print("Задача закрытая: общий запас равен общей потребности.")
+        report.add("Задача закрытая: общий запас равен общей потребности.")
 
-    print("Условие закрытой задачи:")
-    print(f"Тарифы: {costs.tolist()}")
-    print(f"Запасы: {supply.tolist()}")
-    print(f"Потребности: {demand.tolist()}")
+    report.add("Условие закрытой задачи:")
+    report.add(f"Тарифы: {costs.tolist()}")
+    report.add(f"Запасы: {supply.tolist()}")
+    report.add(f"Потребности: {demand.tolist()}")
     return _ClosedProblem(costs, supply, demand, supplier_names, consumer_names)
 
 
@@ -259,6 +260,7 @@ def _display_table(
     problem: _ClosedProblem,
     allocations: np.ndarray,
     title: str,
+    report: StepReport,
     potentials: _PotentialStep | None = None,
     selected_cycle: list[tuple[int, int]] | None = None,
 ) -> None:
@@ -338,10 +340,10 @@ def _display_table(
         + "+".join("-" * (width + 2) for width in widths)
         + "+"
     )
-    print(f"\n{title}")
-    print(separator)
-    print(format_row("", headers))
-    print(separator)
+    report.add(f"\n{title}")
+    report.add(separator)
+    report.add(format_row("", headers))
+    report.add(separator)
     for row, label in enumerate(row_labels):
         cells = []
         for column in range(problem.costs.shape[1]):
@@ -371,15 +373,15 @@ def _display_table(
             cells.append(formatted)
         if potentials is not None:
             cells.append(plain_cells[row][-1])
-        print(format_row(label, cells, row))
+        report.add(format_row(label, cells, row))
     if potentials is not None:
         potential_row = [
             *(_format_number(value) for value in potentials.column_potentials),
             "",
         ]
-        print(separator)
-        print(format_row("v[j]", potential_row))
-    print(separator)
+        report.add(separator)
+        report.add(format_row("v[j]", potential_row))
+    report.add(separator)
 
 
 def _display_potential_step(
@@ -389,19 +391,21 @@ def _display_potential_step(
     basic: np.ndarray,
     potentials: _PotentialStep,
     entering: tuple[int, int] | None,
+    report: StepReport,
     cycle: list[tuple[int, int]] | None = None,
 ) -> None:
     _display_table(
         problem,
         allocations,
         f"Шаг {iteration}. Метод потенциалов",
+        report,
         potentials,
         cycle,
     )
     if entering is None:
-        print("Все оценки Δc[i,j] неотрицательны: план оптимален.")
+        report.add("Все оценки Δc[i,j] неотрицательны: план оптимален.")
     else:
-        print(
+        report.add(
             f"Входящая клетка: ({entering[0] + 1}, {entering[1] + 1}), "
             f"оценка Δc={_format_number(potentials.reduced_costs[entering])}."
         )
@@ -410,26 +414,34 @@ def _display_potential_step(
                 f"{'+' if index % 2 == 0 else '-'}({row + 1},{column + 1})"
                 for index, (row, column) in enumerate(cycle)
             ]
-            print(
+            report.add(
                 f"Цикл перераспределения: {' '.join(signed_cycle)}"
             )
 
 
-def _display_solution(problem: _ClosedProblem, allocations: np.ndarray) -> None:
+def _display_solution(
+    problem: _ClosedProblem, allocations: np.ndarray, report: StepReport
+) -> None:
     total_cost = float(np.sum(allocations * problem.costs))
-    print("\nОптимальный план перевозок:")
-    print(np.matrix(allocations))
-    print(f"Минимальная стоимость перевозок: {_format_number(total_cost)}")
+    report.add("\nОптимальный план перевозок:")
+    report.add(allocations)
+    report.add(f"Минимальная стоимость перевозок: {_format_number(total_cost)}")
 
 
-def solve_transport(
-    costs: npt.ArrayLike, supply: npt.ArrayLike, demand: npt.ArrayLike
+def _solve_transport_impl(
+    costs: npt.ArrayLike,
+    supply: npt.ArrayLike,
+    demand: npt.ArrayLike,
+    *,
+    report: StepReport,
 ) -> np.matrix:
     """Find a minimum-cost transportation plan using the lecture's potentials method."""
     costs, supply, demand = _validate_arguments(costs, supply, demand)
-    problem = _close_problem(costs, supply, demand)
+    problem = _close_problem(costs, supply, demand, report)
     allocations, basic = _northwest_corner(problem.supply, problem.demand)
-    _display_table(problem, allocations, "Шаг 1. Метод северо-западного угла")
+    _display_table(
+        problem, allocations, "Шаг 1. Метод северо-западного угла", report
+    )
 
     iteration = 2
     while True:
@@ -437,17 +449,38 @@ def solve_transport(
         entering = _select_entering_cell(potentials.reduced_costs, basic)
         if entering is None:
             _display_potential_step(
-                iteration, problem, allocations, basic, potentials, entering
+                iteration,
+                problem,
+                allocations,
+                basic,
+                potentials,
+                entering,
+                report,
             )
             break
 
         cycle = _find_cycle(basic, entering)
         _display_potential_step(
-            iteration, problem, allocations, basic, potentials, entering, cycle
+            iteration,
+            problem,
+            allocations,
+            basic,
+            potentials,
+            entering,
+            report,
+            cycle,
         )
         amount = _redistribute(allocations, basic, problem.costs, cycle)
-        print(f"Величина перераспределения Δx={_format_number(amount)}.")
+        report.add(f"Величина перераспределения Δx={_format_number(amount)}.")
         iteration += 1
 
-    _display_solution(problem, allocations)
+    _display_solution(problem, allocations, report)
     return np.matrix(allocations)
+
+
+def solve_transport(
+    costs: npt.ArrayLike, supply: npt.ArrayLike, demand: npt.ArrayLike
+) -> tuple[np.matrix, str]:
+    report = StepReport()
+    result = _solve_transport_impl(costs, supply, demand, report=report)
+    return result, report.get_text()

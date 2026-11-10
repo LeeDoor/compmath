@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
 import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io
 import json
 import logging
 import math
@@ -14,7 +12,6 @@ import mimetypes
 from pathlib import Path
 import re
 import sys
-from threading import Lock
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -76,7 +73,6 @@ CONSTRAINT_TASKS = frozenset(
         "standard_form",
     }
 )
-SOLVER_OUTPUT_LOCK = Lock()
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -138,15 +134,22 @@ def _validate_choices(
 
 
 def _run_solver(function: Any, *args: Any) -> str:
-    output = io.StringIO()
-    with SOLVER_OUTPUT_LOCK, redirect_stdout(output):
-        result = function(*args)
+    result = function(*args)
+    if (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[1], str)
+    ):
+        value, steps = result
+        returned = value if isinstance(value, str) else (
+            str(value) if value is not None else ""
+        )
+        return "\n\n".join(part for part in (steps, returned) if part)
 
-    printed = output.getvalue().strip()
     returned = result if isinstance(result, str) else (
         str(result) if result is not None else ""
     )
-    return "\n\n".join(part for part in (printed, returned) if part)
+    return returned
 
 
 def solve_task(payload: Any) -> str:
@@ -430,6 +433,113 @@ def _render_transport_result(result: str) -> str:
     return "".join(rendered)
 
 
+def _render_algorithm_result(result: str) -> str:
+    """Render plain solver output as semantic HTML and tables."""
+    lines = [_ANSI_ESCAPE.sub("", line).rstrip() for line in result.splitlines()]
+    rendered: list[str] = []
+    index = 0
+
+    def split_row(line: str, expected_cells: int | None = None) -> list[str]:
+        cells = [cell.strip() for cell in re.split(r"\s{2,}", line.strip())]
+        if expected_cells is not None and len(cells) != expected_cells:
+            fallback = line.split()
+            if len(fallback) == expected_cells:
+                return fallback
+        return cells
+
+    def render_table(header: list[str], rows: list[list[str]], delta: list[str]) -> str:
+        table = [
+            '<div class="algorithm-result-scroll">'
+            '<table class="algorithm-result-table"><thead><tr>'
+        ]
+        table.extend(
+            f'<th scope="col">{html.escape(cell)}</th>' for cell in header
+        )
+        table.append("</tr></thead><tbody>")
+        for row in rows:
+            table.append("<tr>")
+            table.append(f'<th scope="row">{html.escape(row[0])}</th>')
+            table.extend(
+                f"<td>{html.escape(cell)}</td>" for cell in row[1:]
+            )
+            table.append("</tr>")
+        table.append("</tbody>")
+        if delta:
+            table.append("<tfoot><tr>")
+            table.append(f'<th scope="row">{html.escape(delta[0])}</th>')
+            table.extend(
+                f"<td>{html.escape(cell)}</td>" for cell in delta[1:]
+            )
+            table.append("</tr></tfoot>")
+        table.append("</table></div>")
+        return "".join(table)
+
+    def is_rule(line: str) -> bool:
+        return re.fullmatch(r"[-=]{5,}", line.strip()) is not None
+
+    def is_heading(line: str) -> bool:
+        text = line.strip()
+        return (
+            (text.endswith(":") and len(text) <= 180)
+            or re.match(r"^\d+\)\s+", text) is not None
+            or "ИТЕРАЦИЯ" in text.upper()
+            or "СИМПЛЕКСНАЯ ТАБЛИЦА" in text.upper()
+            or text.upper() in ("ИТОГОВЫЙ РЕЗУЛЬТАТ", "ИТОГОВОЕ РЕШЕНИЕ")
+        )
+
+    while index < len(lines):
+        text = lines[index].strip()
+        if not text or is_rule(text):
+            index += 1
+            continue
+
+        header = split_row(lines[index])
+        if header and header[0] == "Базис":
+            rows = []
+            delta = []
+            cursor = index + 1
+            while cursor < len(lines):
+                row_text = lines[cursor].strip()
+                if not row_text:
+                    cursor += 1
+                    continue
+                if is_rule(row_text):
+                    cursor += 1
+                    continue
+
+                cells = split_row(lines[cursor], len(header))
+                if cells and cells[0] == "Δ":
+                    if len(cells) == len(header) - 1:
+                        cells.append("")
+                    if len(cells) == len(header):
+                        delta = cells
+                        cursor += 1
+                        continue
+                if len(cells) == len(header):
+                    rows.append(cells)
+                    cursor += 1
+                    continue
+                break
+
+            if rows:
+                rendered.append(render_table(header, rows, delta))
+                index = cursor
+                continue
+
+        if is_heading(text):
+            rendered.append(
+                '<h3 class="algorithm-result-heading">'
+                f"{html.escape(text.rstrip(':'))}</h3>"
+            )
+        else:
+            rendered.append(
+                f'<p class="algorithm-result-text">{html.escape(text)}</p>'
+            )
+        index += 1
+
+    return '<section class="algorithm-result">' + "".join(rendered) + "</section>"
+
+
 def render_task_page(
     task: dict[str, Any],
     values: dict[str, str],
@@ -594,12 +704,14 @@ def render_task_page(
         form.append('<h2>Результат</h2>')
         if task_id == "transport":
             form.append(_render_transport_result(result))
-        else:
+        elif task_id == "artificial_basis":
             form.append(
                 '<textarea readonly rows="18" cols="90">'
                 + html.escape(clean_result)
                 + "</textarea>"
             )
+        else:
+            form.append(_render_algorithm_result(clean_result))
 
     return (
         '<!doctype html><html lang="ru"><head><meta charset="utf-8">'

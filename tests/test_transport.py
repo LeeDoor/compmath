@@ -1,6 +1,4 @@
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 import re
 
 import numpy as np
@@ -10,10 +8,8 @@ from linear_programming.math_tasks.transport import solve_transport
 
 class TransportTests(unittest.TestCase):
     def run_transport(self, costs, supply, demand):
-        output = StringIO()
-        with redirect_stdout(output):
-            plan = solve_transport(costs, supply, demand)
-        return np.asarray(plan), output.getvalue()
+        plan, steps = solve_transport(costs, supply, demand)
+        return np.asarray(plan), steps
 
     def test_lecture_example_reaches_optimum_with_potentials(self):
         plan, output = self.run_transport(

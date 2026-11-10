@@ -151,11 +151,76 @@ class WebApiTests(unittest.TestCase):
         self.assertNotIn("[[2.", page)
         self.assertNotIn("<textarea", page)
 
-    def test_non_transport_result_keeps_textarea(self):
-        page = render_task_page(TASK_BY_ID["simplex"], {}, result="Результат")
+    def test_simplex_result_uses_html_headings_and_table(self):
+        result = solve_task(
+            {
+                "task_id": "simplex",
+                "A": [[1]],
+                "b": [1],
+                "c": [-1],
+                "sense": "max",
+            }
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1</h3>",
+            page,
+        )
+        self.assertIn('<table class="algorithm-result-table">', page)
+        self.assertIn('<th scope="col">Базис</th>', page)
+        self.assertNotIn("<textarea", page)
+
+    def test_artificial_basis_keeps_textarea(self):
+        page = render_task_page(
+            TASK_BY_ID["artificial_basis"], {}, result="Результат"
+        )
 
         self.assertIn("<textarea readonly", page)
-        self.assertNotIn("transport-result-table", page)
+
+    def test_dual_simplex_result_uses_html_table(self):
+        result = solve_task(
+            {
+                "task_id": "dual_simplex",
+                "A": [[1, 1]],
+                "b": [2],
+                "c": [-2, -1],
+                "sense": "max",
+                "constraint_signs": [">="],
+                "variable_constraints": ["nonnegative", "nonnegative"],
+            }
+        )
+        page = render_task_page(TASK_BY_ID["dual_simplex"], {}, result=result)
+
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "Симплекс-таблица, итерация 1</h3>",
+            page,
+        )
+        self.assertIn('<table class="algorithm-result-table">', page)
+        self.assertNotIn("<textarea", page)
+
+    def test_form_result_text_uses_html_and_escapes_contents(self):
+        page = render_task_page(
+            TASK_BY_ID["canonical_form"],
+            {},
+            result=(
+                "Приведение к канонической форме:\n"
+                "1) Преобразование <x>."
+            ),
+        )
+
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">'
+            "Приведение к канонической форме</h3>",
+            page,
+        )
+        self.assertIn(
+            '<h3 class="algorithm-result-heading">1) Преобразование &lt;x&gt;.</h3>',
+            page,
+        )
+        self.assertNotIn("<textarea", page)
 
     def test_html_form_payload_includes_signs_and_variable_constraints(self):
         payload = _form_payload(
