@@ -439,13 +439,8 @@ def _render_algorithm_result(result: str) -> str:
     rendered: list[str] = []
     index = 0
 
-    def split_row(line: str, expected_cells: int | None = None) -> list[str]:
-        cells = [cell.strip() for cell in re.split(r"\s{2,}", line.strip())]
-        if expected_cells is not None and len(cells) != expected_cells:
-            fallback = line.split()
-            if len(fallback) == expected_cells:
-                return fallback
-        return cells
+    def split_row(line: str) -> list[str]:
+        return [cell.strip() for cell in re.split(r"\s{2,}", line.strip())]
 
     def render_table(header: list[str], rows: list[list[str]], delta: list[str]) -> str:
         table = [
@@ -507,7 +502,7 @@ def _render_algorithm_result(result: str) -> str:
                     cursor += 1
                     continue
 
-                cells = split_row(lines[cursor], len(header))
+                cells = split_row(lines[cursor])
                 if cells and cells[0] == "Δ":
                     if len(cells) == len(header) - 1:
                         cells.append("")
@@ -548,7 +543,7 @@ def render_task_page(
 ) -> str:
     """Render a plain HTML condition form, optionally with its result."""
     task_id = task["id"]
-    storage_key = task["input"]
+    storage_key = task_id
     form = [
         f'<form method="post" action="/solve-page" data-storage-key="{storage_key}" '
         f'data-resize-url="/task/{task_id}">',

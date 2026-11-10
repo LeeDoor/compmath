@@ -56,6 +56,11 @@ class DualSimplexTests(unittest.TestCase):
         self.assertIn("x2", header)
         self.assertNotIn("x3", header)
         self.assertIn("x3", first_row)
+        delta_row = next(
+            line for line in initial_table.splitlines()
+            if line.strip().startswith("Δ")
+        )
+        self.assertEqual(len(delta_row.split()), 3)
 
     def test_nonnegative_basic_rhs_requests_regular_simplex(self):
         result, output = self.run_solver([[1]], [4], [3])

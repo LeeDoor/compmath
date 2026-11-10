@@ -33,6 +33,14 @@ class PrimalDualTests(unittest.TestCase):
         self.assertIn("СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1", steps)
         self.assertEqual(output.getvalue(), "")
 
+    def test_simplex_table_delta_row_uses_dual_simplex_layout(self):
+        _, steps = solve_simplex([[1]], [1], [-1])
+        delta_row = next(
+            line for line in steps.splitlines() if line.strip().startswith("Δ")
+        )
+
+        self.assertEqual(len(delta_row.split()), 2)
+
     def test_artificial_basis_returns_steps_without_printing(self):
         output = StringIO()
         with redirect_stdout(output):

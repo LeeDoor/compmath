@@ -1,13 +1,17 @@
 const form = document.querySelector("form[data-storage-key]");
 if (form) {
   const key = `compmath.${form.dataset.storageKey}.v2`;
-  let saved = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(key) || "{}");
-  } catch {
-    saved = {};
-  }
-  if (!saved || typeof saved !== "object") saved = {};
+  const dimensionsKey = `${key}.dimensions`;
+  const read = (storageKey) => {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      return value && typeof value === "object" ? value : {};
+    } catch {
+      return {};
+    }
+  };
+  const saved = read(key);
+  const savedDimensions = read(dimensionsKey);
   delete saved.task_id;
 
   const fields = [
@@ -21,9 +25,12 @@ if (form) {
   ]);
   let sizeChanged = false;
   for (const field of fields) {
-    if (Object.hasOwn(saved, field.name)) {
+    const storedValue = sizeFields.has(field.name)
+      ? savedDimensions[field.name] ?? saved[field.name]
+      : saved[field.name];
+    if (storedValue !== undefined) {
       const previousValue = field.value;
-      field.value = String(saved[field.name]);
+      field.value = String(storedValue);
       if (sizeFields.has(field.name)) {
         sizeChanged ||= previousValue !== field.value;
       }
@@ -45,6 +52,13 @@ if (form) {
       values[field.name] = field.value;
     }
     localStorage.setItem(key, JSON.stringify(values));
+    const dimensions = {};
+    for (const field of fields) {
+      if (sizeFields.has(field.name)) {
+        dimensions[field.name] = field.value;
+      }
+    }
+    localStorage.setItem(dimensionsKey, JSON.stringify(dimensions));
   };
   const resize = (values, replace = false) => {
     const query = new URLSearchParams(values);

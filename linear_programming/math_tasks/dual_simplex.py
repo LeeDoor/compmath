@@ -5,7 +5,7 @@ import numpy.typing as npt
 
 from ..problem import Sense
 from .canonical_form import make_canonical
-from .simplex import ConstraintSign, VariableConstraint
+from .simplex import ConstraintSign, VariableConstraint, append_simplex_table
 from .steps import StepReport
 
 
@@ -120,29 +120,6 @@ def _solve_dual_simplex_impl(
         )
     tableau[np.abs(tableau) < _TOLERANCE] = 0
 
-    def append_table(title: str) -> None:
-        nonbasic = [
-            column
-            for column in range(variable_count)
-            if column not in basis
-        ]
-        report.add(f"\n{title}:")
-        report.add(
-            f"{'Базис':>8}"
-            + "".join(f"{names[column]:>12}" for column in nonbasic)
-            + f"{'b':>12}"
-        )
-        for row in range(row_count):
-            report.add(
-                f"{names[basis[row]]:>8}"
-                + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
-                + f"{tableau[row, -1]:12.4g}"
-            )
-        report.add(
-            f"{'Δ':>8}"
-            + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
-        )
-
     def pivot(row: int, column: int) -> None:
         element = tableau[row, column]
         tableau[row, :] /= element
@@ -156,7 +133,13 @@ def _solve_dual_simplex_impl(
         tableau[np.abs(tableau) < _TOLERANCE] = 0
 
     for iteration in range(1, _MAX_ITERATIONS + 1):
-        append_table(f"Симплекс-таблица, итерация {iteration}")
+        append_simplex_table(
+            report,
+            tableau,
+            basis,
+            names,
+            f"Симплекс-таблица, итерация {iteration}",
+        )
         negative_rhs = np.flatnonzero(tableau[:row_count, -1] < -_TOLERANCE)
         negative_delta = np.flatnonzero(tableau[-1, :-1] < -_TOLERANCE)
         if not len(negative_rhs) and not len(negative_delta):

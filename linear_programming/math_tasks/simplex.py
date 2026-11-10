@@ -13,6 +13,37 @@ ConstraintSign = Literal["<=", ">=", "="]
 VariableConstraint = Literal["nonnegative", "free"]
 
 
+def append_simplex_table(
+    report: StepReport,
+    tableau: np.ndarray,
+    basis: list[int],
+    variable_names: list[str],
+    title: str,
+) -> None:
+    """Append a simplex tableau using the shared dual-simplex layout."""
+    variable_count = tableau.shape[1] - 1
+    nonbasic = [
+        column for column in range(variable_count) if column not in basis
+    ]
+
+    report.add(f"\n{title}:")
+    report.add(
+        f"{'Базис':>8}"
+        + "".join(f"{variable_names[column]:>12}" for column in nonbasic)
+        + f"{'b':>12}"
+    )
+    for row in range(len(basis)):
+        report.add(
+            f"{variable_names[basis[row]]:>8}"
+            + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
+            + f"{tableau[row, -1]:12.4g}"
+        )
+    report.add(
+        f"{'Δ':>8}"
+        + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
+    )
+
+
 def _run_simplex_tableau_impl(
     tableau: np.ndarray,
     basis: list[int],
@@ -48,44 +79,12 @@ def _run_simplex_tableau_impl(
     non_basis = [j for j in range(variable_count) if j not in basis]
 
     def append_table(number: int) -> None:
-        report.add(f"\n{'=' * 65}")
-        report.add(f"{title}. СИМПЛЕКСНАЯ ТАБЛИЦА №{number}")
-        report.add(f"{'=' * 65}")
-
-        header = ["Базис"] + [variable_names[j] for j in non_basis] + ["b"]
-        widths = [9] + [11] * (len(header) - 1)
-
-        report.add(
-            "".join(
-                str(value).center(width)
-                for value, width in zip(header, widths)
-            )
-        )
-
-        for i in range(row_count):
-            row = (
-                [variable_names[basis[i]]]
-                + [f"{tableau[i, j]:.4f}" for j in non_basis]
-                + [f"{tableau[i, -1]:.4f}"]
-            )
-            report.add(
-                "".join(
-                    str(value).center(width)
-                    for value, width in zip(row, widths)
-                )
-            )
-
-        report.add("-" * sum(widths))
-        delta_row = (
-            ["Δ"]
-            + [f"{tableau[-1, j]:.4f}" for j in non_basis]
-            + [f"{tableau[-1, -1]:.4f}"]
-        )
-        report.add(
-            "".join(
-                str(value).center(width)
-                for value, width in zip(delta_row, widths)
-            )
+        append_simplex_table(
+            report,
+            tableau,
+            basis,
+            variable_names,
+            f"{title}. СИМПЛЕКСНАЯ ТАБЛИЦА №{number}",
         )
 
         report.add("\nОценки Δ всех переменных:")
