@@ -277,6 +277,66 @@ table {
   line-height: 1.5;
 }
 
+.math-expression,
+.equation-system-row {
+  font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 19px;
+}
+
+.math-expression {
+  text-align: center;
+}
+
+.equation-system-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.equation-system {
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px auto 20px;
+  padding: 14px 20px;
+  border: 1px solid #c9d4c8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 12px #243d2d12;
+}
+
+.equation-system-brace {
+  color: #376b4a;
+  font-family: "Times New Roman", serif;
+  font-size: calc(2rem + var(--equation-count) * 0.65rem);
+  line-height: 1;
+}
+
+.equation-system-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.equation-system-row {
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.equation-system-row var,
+.math-expression var {
+  font-style: italic;
+}
+
+.equation-system-row sup,
+.math-expression sup {
+  font-size: 0.72em;
+}
+
+.equation-system-row sub,
+.math-expression sub {
+  font-size: 0.72em;
+}
+
 .algorithm-result-scroll {
   overflow-x: auto;
 }

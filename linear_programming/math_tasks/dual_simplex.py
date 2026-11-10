@@ -3,6 +3,7 @@
 import numpy as np
 import numpy.typing as npt
 
+from ..display_methods import format_system_of_equations
 from ..problem import Sense
 from .canonical_form import make_canonical
 from .simplex import ConstraintSign, VariableConstraint, append_simplex_table
@@ -99,8 +100,14 @@ def _solve_dual_simplex_impl(
 
     report.add("\nСистема после приведения к канонической форме:")
     report.add(f"F = {format_expression(objective, names)} -> max")
-    for row, value in zip(canonical_matrix, canonical_rhs):
-        report.add(f"{format_expression(row, names)} = {value:g}")
+    equations = [
+        f"{format_expression(row, names)} = {value:g}"
+        for row, value in zip(canonical_matrix, canonical_rhs)
+    ]
+    report.add_formatted_system(
+        equations,
+        format_system_of_equations(equations),
+    )
 
     dual_candidates = np.flatnonzero(canonical_rhs < -_TOLERANCE)
     if not len(dual_candidates):

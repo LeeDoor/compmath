@@ -5,6 +5,10 @@ from .display_function import display_function
 from .display_max import display_max
 from .display_min import display_min
 from .display_matrix import display_matrix
+from .format_system_of_equations import (
+    format_math_expression,
+    format_system_of_equations,
+)
 
 __all__ = [
     "display_augmented_matrix",
@@ -12,4 +16,6 @@ __all__ = [
     "display_max",
     "display_min",
     "display_matrix",
+    "format_math_expression",
+    "format_system_of_equations",
 ]

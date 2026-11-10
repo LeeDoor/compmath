@@ -173,6 +173,8 @@ class WebApiTests(unittest.TestCase):
         )
         page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
 
+        self.assertTrue(result.formatted_systems)
+        self.assertIn('<div class="equation-system"', page)
         self.assertIn(
             '<h3 class="algorithm-result-heading">'
             "СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1</h3>",
@@ -181,6 +183,22 @@ class WebApiTests(unittest.TestCase):
         self.assertIn('<table class="algorithm-result-table">', page)
         self.assertIn('<th scope="col">Базис</th>', page)
         self.assertNotIn("<textarea", page)
+
+    def test_linear_equation_system_uses_math_html_formatting(self):
+        result = "\n".join(
+            [
+                "Система уравнений текущего базиса:",
+                "x'1 = 2 - 0.5*x''1",
+                "x2 = 3 & 4",
+            ]
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertIn('<div class="equation-system"', page)
+        self.assertIn('<var>x</var><sup>′</sup><sub>1</sub>', page)
+        self.assertIn('<var>x</var><sup>″</sup><sub>1</sub>', page)
+        self.assertIn("3 &amp; 4", page)
+        self.assertEqual(page.count('class="equation-system-row"'), 2)
 
     def test_simplex_explanatory_sections_are_not_added_to_table(self):
         result = "\n".join(
@@ -239,6 +257,7 @@ class WebApiTests(unittest.TestCase):
             "Симплекс-таблица, итерация 1</h3>",
             page,
         )
+        self.assertIn('<div class="equation-system"', page)
         self.assertIn('<table class="algorithm-result-table">', page)
         self.assertNotIn("<textarea", page)
 

@@ -21,9 +21,14 @@ from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks.optimality import check_optimality
 from linear_programming.math_tasks.primal_dual import solve_primal_dual
 from linear_programming.math_tasks.simplex import solve_simplex
+from linear_programming.math_tasks.steps import FormattedSystem, ReportText
 from linear_programming.math_tasks.standard_form import to_standard_form
 from linear_programming.math_tasks.transport import solve_transport
 from linear_programming.problem import create_problem
+from linear_programming.display_methods import (
+    format_math_expression,
+    format_system_of_equations,
+)
 
 
 WEB_ROOT = Path(__file__).parent / "web"
@@ -144,7 +149,8 @@ def _run_solver(function: Any, *args: Any) -> str:
         returned = value if isinstance(value, str) else (
             str(value) if value is not None else ""
         )
-        return "\n\n".join(part for part in (steps, returned) if part)
+        text = "\n\n".join(part for part in (steps, returned) if part)
+        return ReportText(text, getattr(steps, "formatted_systems", ()))
 
     returned = result if isinstance(result, str) else (
         str(result) if result is not None else ""
@@ -433,7 +439,10 @@ def _render_transport_result(result: str) -> str:
     return "".join(rendered)
 
 
-def _render_algorithm_result(result: str) -> str:
+def _render_algorithm_result(
+    result: str,
+    formatted_systems: tuple[FormattedSystem, ...] = (),
+) -> str:
     """Render plain solver output as semantic HTML and tables."""
     lines = [_ANSI_ESCAPE.sub("", line).rstrip() for line in result.splitlines()]
     rendered: list[str] = []
@@ -482,6 +491,17 @@ def _render_algorithm_result(result: str) -> str:
             or text.upper() in ("ИТОГОВЫЙ РЕЗУЛЬТАТ", "ИТОГОВОЕ РЕШЕНИЕ")
         )
 
+    def is_system_heading(line: str) -> bool:
+        text = line.strip().rstrip(":")
+        return (
+            text.startswith("Система уравнений")
+            or text.startswith("Система после приведения")
+            or text in ("Ограничения", "Добавляем базисные переменные")
+        )
+
+    def is_equation(line: str) -> bool:
+        return "=" in line and "->" not in line
+
     while index < len(lines):
         text = lines[index].strip()
         if not text or is_rule(text):
@@ -526,6 +546,40 @@ def _render_algorithm_result(result: str) -> str:
                 '<h3 class="algorithm-result-heading">'
                 f"{html.escape(text.rstrip(':'))}</h3>"
             )
+            index += 1
+            if not is_system_heading(text):
+                continue
+
+            equations = []
+            while index < len(lines):
+                equation = lines[index].strip()
+                if not equation:
+                    index += 1
+                    continue
+                if equation.startswith("F =") and "->" in equation:
+                    rendered.append(
+                        '<p class="algorithm-result-text math-expression">'
+                        f"{format_math_expression(equation)}</p>"
+                    )
+                    index += 1
+                    continue
+                if not is_equation(equation):
+                    break
+                equations.append(equation)
+                index += 1
+            if equations:
+                formatted = next(
+                    (
+                        system.html
+                        for system in formatted_systems
+                        if system.equations == tuple(equations)
+                    ),
+                    None,
+                )
+                rendered.append(
+                    formatted or format_system_of_equations(equations)
+                )
+            continue
         else:
             rendered.append(
                 f'<p class="algorithm-result-text">{html.escape(text)}</p>'
@@ -706,7 +760,12 @@ def render_task_page(
                 + "</textarea>"
             )
         else:
-            form.append(_render_algorithm_result(clean_result))
+            form.append(
+                _render_algorithm_result(
+                    clean_result,
+                    getattr(result, "formatted_systems", ()),
+                )
+            )
 
     return (
         '<!doctype html><html lang="ru"><head><meta charset="utf-8">'

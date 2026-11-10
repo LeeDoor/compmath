@@ -5,6 +5,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
+from ..display_methods import format_system_of_equations
 from ..problem import Sense, create_problem
 from .steps import StepReport
 
@@ -95,7 +96,7 @@ def _run_simplex_tableau_impl(
         report.add("    ".join(deltas))
 
     def append_equations() -> None:
-        report.add("\nСистема уравнений текущего базиса:")
+        equations = []
         for i in range(row_count):
             terms = []
             for j in range(variable_count):
@@ -109,7 +110,12 @@ def _run_simplex_tableau_impl(
             equation = f"{variable_names[basis[i]]} = {tableau[i, -1]:.4f}"
             if terms:
                 equation += " - " + " - ".join(terms)
-            report.add(equation)
+            equations.append(equation)
+        report.add_formatted_system(
+            equations,
+            format_system_of_equations(equations),
+            heading="Система уравнений текущего базиса:",
+        )
 
     for iteration in range(1, max_iterations + 1):
         basic_costs = np.array([costs[index] for index in basis])
@@ -230,15 +236,25 @@ def _solve_simplex_impl(
         + " + ".join(f"({original_c[j]:g})*x{j + 1}" for j in range(n))
         + f" -> {sense}"
     )
-    report.add("\nОграничения:")
+    constraints = []
     for i in range(m):
         terms = " + ".join(f"({A[i, j]:g})*x{j + 1}" for j in range(n))
-        report.add(f"{terms} <= {b[i]:g}")
+        constraints.append(f"{terms} <= {b[i]:g}")
+    report.add_formatted_system(
+        constraints,
+        format_system_of_equations(constraints),
+        heading="Ограничения:",
+    )
 
-    report.add("\nДобавляем базисные переменные:")
+    augmented_constraints = []
     for i in range(m):
         terms = " + ".join(f"({A[i, j]:g})*x{j + 1}" for j in range(n))
-        report.add(f"{terms} + x{n + i + 1} = {b[i]:g}")
+        augmented_constraints.append(f"{terms} + x{n + i + 1} = {b[i]:g}")
+    report.add_formatted_system(
+        augmented_constraints,
+        format_system_of_equations(augmented_constraints),
+        heading="Добавляем базисные переменные:",
+    )
 
     full_costs = np.zeros(n + m)
     full_costs[:n] = work_c
