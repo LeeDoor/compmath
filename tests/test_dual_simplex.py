@@ -79,6 +79,22 @@ class DualSimplexTests(unittest.TestCase):
         self.assertIn("x* = (2)", result)
         self.assertIn("Значение целевой функции: 2", result)
 
+    def test_free_variable_uses_canonical_matrix_and_restores_original_value(self):
+        result, output = self.run_solver(
+            [[1]],
+            [2],
+            [-1],
+            "max",
+            [">="],
+            ["free"],
+        )
+
+        self.assertIn("Система после приведения к канонической форме:", output)
+        self.assertIn("x'1", output)
+        self.assertIn("x''1", output)
+        self.assertIn("x* = (2)", result)
+        self.assertIn("Значение целевой функции: -2", result)
+
     def test_primal_simplex_finishes_when_feasibility_is_restored(self):
         result, output = self.run_solver(
             [[1], [1]],

@@ -9,7 +9,7 @@ import numpy as np
 from linear_programming.display_methods.display_max import display_max
 from linear_programming.display_methods.display_min import display_min
 from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
-from linear_programming.math_tasks.canonical_form import to_canonical_form
+from linear_programming.math_tasks.canonical_form import run_canonical_algorithm
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks._stub import (
     describe_linear_problem,
@@ -223,7 +223,7 @@ def main() -> None:
         7: (
             "Приведение к канонической форме",
             "linear",
-            lambda problem: to_canonical_form(
+            lambda problem: run_canonical_algorithm(
                 problem.A, problem.b, problem.c, problem.sense
             ),
         ),

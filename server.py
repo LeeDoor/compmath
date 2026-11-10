@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from linear_programming.math_tasks.artificial_basis import solve_artificial_basis
-from linear_programming.math_tasks.canonical_form import to_canonical_form
+from linear_programming.math_tasks.canonical_form import run_canonical_algorithm
 from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks.optimality import check_optimality
 from linear_programming.math_tasks.primal_dual import solve_primal_dual
@@ -209,7 +209,7 @@ def solve_task(payload: Any) -> str:
         "simplex": solve_simplex,
         "dual_simplex": solve_dual_simplex,
         "artificial_basis": solve_artificial_basis,
-        "canonical_form": to_canonical_form,
+        "canonical_form": run_canonical_algorithm,
         "standard_form": to_standard_form,
     }[task_id]
     return _run_solver(solver, *solver_args)

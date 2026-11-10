@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..problem import Sense
-from .canonical_form import get_canonical_matrices
+from .canonical_form import make_canonical
 from .simplex import (
     ConstraintSign,
     VariableConstraint,
@@ -25,7 +25,7 @@ def solve_artificial_basis(
 
     # 1. Приведение задачи к канонической форме.
     print("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
-    A, b, c, decision_count = get_canonical_matrices(
+    A, b, c, decision_count = make_canonical(
         A,
         b,
         c,
@@ -165,7 +165,7 @@ def solve_artificial_basis(
     solution[np.abs(solution) < eps] = 0
     objective_value = float(np.dot(c, solution))
 
-    # get_canonical_matrices переводит min в max, меняя знак c.
+    # make_canonical переводит min в max, меняя знак c.
     if sense == "min":
         objective_value = -objective_value
 
