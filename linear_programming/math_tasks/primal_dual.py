@@ -3,6 +3,7 @@
 import numpy.typing as npt
 import numpy as np
 from ..problem import Sense, create_problem
+from ..display_methods import format_math_function
 from ..display_methods.display_function import display_function
 from .simplex import ConstraintSign, VariableConstraint, _solve_simplex_impl
 from .steps import StepReport
@@ -81,7 +82,11 @@ def _solve_primal_dual_impl(A: npt.ArrayLike,
     y_names = [f"y{i+1}" for i in range(m)]
     A_dual, b_dual, c_dual, sense_dual = build_dual(A_np, b_np, c_np, sense)
     report.add(f"\nДВОЙСТВЕННАЯ ЗАДАЧА:")
-    report.add(f"g(y) = {format_expression(b_np, y_names)} -> {sense_dual}")
+    dual_function = f"g(y) = {format_expression(b_np, y_names)} -> {sense_dual}"
+    report.add_formatted_function(
+        dual_function,
+        format_math_function(dual_function),
+    )
     
 
     for j in range(n):

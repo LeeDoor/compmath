@@ -277,14 +277,27 @@ table {
   line-height: 1.5;
 }
 
-.math-expression,
+.math-function,
 .equation-system-row {
   font-family: "Cambria Math", "Times New Roman", serif;
   font-size: 19px;
 }
 
-.math-expression {
+.math-function-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.math-function {
+  width: max-content;
+  margin: 14px auto 20px;
+  padding: 14px 20px;
+  border: 1px solid #c9d4c8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 12px #243d2d12;
   text-align: center;
+  white-space: nowrap;
 }
 
 .equation-system-scroll {
@@ -323,17 +336,17 @@ table {
 }
 
 .equation-system-row var,
-.math-expression var {
+.math-function var {
   font-style: italic;
 }
 
 .equation-system-row sup,
-.math-expression sup {
+.math-function sup {
   font-size: 0.72em;
 }
 
 .equation-system-row sub,
-.math-expression sub {
+.math-function sub {
   font-size: 0.72em;
 }
 
@@ -350,6 +363,19 @@ table {
 .algorithm-result-table td {
   min-width: 78px;
   padding: 6px;
+}
+
+.algorithm-result-table .pivot-column {
+  background: #dcefff;
+}
+
+.algorithm-result-table .pivot-row > th,
+.algorithm-result-table .pivot-row > td {
+  background: #fbe0e0;
+}
+
+.algorithm-result-table .pivot-row > .pivot-column {
+  background: #eadcf5;
 }
 
 .transport-solution {

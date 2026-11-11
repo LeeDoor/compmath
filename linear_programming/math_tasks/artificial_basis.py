@@ -3,8 +3,9 @@
 import numpy as np
 import numpy.typing as npt
 
+from ..display_methods import format_math_function
 from ..problem import Sense
-from .canonical_form import make_canonical
+from .canonical_form import format_equation, make_canonical
 from .simplex import ConstraintSign, VariableConstraint, _run_simplex_tableau_impl
 from .steps import StepReport
 
@@ -21,6 +22,12 @@ def _solve_artificial_basis_impl(
 ) -> np.matrix:
     """Решить задачу методом искусственного базиса."""
     eps = 1e-10
+    original_variable_count = len(np.asarray(c).reshape(-1))
+    variable_options = (
+        ["nonnegative"] * original_variable_count
+        if variable_constraints is None
+        else list(variable_constraints)
+    )
 
     # 1. Приведение задачи к канонической форме.
     report.add("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
@@ -38,13 +45,31 @@ def _solve_artificial_basis_impl(
     c = c.copy()
 
     m, n = A.shape
+    canonical_names = []
+    for index, option in enumerate(variable_options):
+        if option == "free":
+            canonical_names.extend((f"x'{index + 1}", f"x''{index + 1}"))
+        else:
+            canonical_names.append(f"x{index + 1}")
+    canonical_names.extend(
+        f"x{index}"
+        for index in range(
+            original_variable_count + 1,
+            original_variable_count + n - decision_count + 1,
+        )
+    )
 
     report.add("\nМатрица A:")
     report.add(A)
     report.add("\nВектор b:")
     report.add(b)
-    report.add("\nЦелевая функция:")
-    report.add(c)
+    report.add_formatted_function(
+        f"f(x) = {format_equation(c, canonical_names)} -> max",
+        format_math_function(
+            f"f(x) = {format_equation(c, canonical_names)} -> max"
+        ),
+        prefix="\nЦелевая функция:\n",
+    )
 
     # 2. Делаем правые части неотрицательными.
     report.add("\nПРИВЕДЕНИЕ ПРАВЫХ ЧАСТЕЙ К НЕОТРИЦАТЕЛЬНОМУ ВИДУ")
