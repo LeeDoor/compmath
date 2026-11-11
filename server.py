@@ -446,7 +446,11 @@ def _render_transport_result(result: str) -> str:
                 break
             index += 1
 
-    return "".join(rendered)
+    return (
+        '<section class="transport-result">'
+        + "".join(rendered)
+        + "</section>"
+    )
 
 
 def _render_algorithm_result(
@@ -817,7 +821,7 @@ def render_task_page(
         form.append(f'<p class="error">{html.escape(error)}</p>')
     if result is not None:
         clean_result = _ANSI_ESCAPE.sub("", result)
-        form.append('<h2>Результат</h2>')
+        form.append('<h2 class="result-heading">Результат</h2>')
         if task_id == "transport":
             form.append(_render_transport_result(result))
         elif task_id == "artificial_basis":
