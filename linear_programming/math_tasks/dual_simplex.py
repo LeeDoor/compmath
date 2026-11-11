@@ -3,6 +3,7 @@
 import numpy as np
 import numpy.typing as npt
 
+from ..display_methods import format_math_function
 from ..display_methods import format_system_of_equations
 from ..problem import Sense
 from .canonical_form import make_canonical
@@ -99,7 +100,11 @@ def _solve_dual_simplex_impl(
         return "".join(terms) or "0"
 
     report.add("\nСистема после приведения к канонической форме:")
-    report.add(f"F = {format_expression(objective, names)} -> max")
+    canonical_function = f"F = {format_expression(objective, names)} -> max"
+    report.add_formatted_function(
+        canonical_function,
+        format_math_function(canonical_function),
+    )
     equations = [
         f"{format_expression(row, names)} = {value:g}"
         for row, value in zip(canonical_matrix, canonical_rhs)
@@ -140,16 +145,20 @@ def _solve_dual_simplex_impl(
         tableau[np.abs(tableau) < _TOLERANCE] = 0
 
     for iteration in range(1, _MAX_ITERATIONS + 1):
-        append_simplex_table(
-            report,
-            tableau,
-            basis,
-            names,
-            f"Симплекс-таблица, итерация {iteration}",
+        report.add(
+            "Базисные переменные: "
+            + ", ".join(names[index] for index in basis)
         )
         negative_rhs = np.flatnonzero(tableau[:row_count, -1] < -_TOLERANCE)
         negative_delta = np.flatnonzero(tableau[-1, :-1] < -_TOLERANCE)
         if not len(negative_rhs) and not len(negative_delta):
+            append_simplex_table(
+                report,
+                tableau,
+                basis,
+                names,
+                f"Симплекс-таблица, итерация {iteration}",
+            )
             break
 
         if len(negative_rhs):
@@ -160,6 +169,14 @@ def _solve_dual_simplex_impl(
                 if tableau[leaving, column] < -_TOLERANCE
             ]
             if not candidates:
+                append_simplex_table(
+                    report,
+                    tableau,
+                    basis,
+                    names,
+                    f"Симплекс-таблица, итерация {iteration}",
+                    pivot_row=leaving,
+                )
                 raise ValueError(
                     "Задача несовместна: в ведущей строке нет подходящего "
                     "ведущего столбца."
@@ -181,6 +198,14 @@ def _solve_dual_simplex_impl(
                 if tableau[row, entering] > _TOLERANCE
             ]
             if not candidates:
+                append_simplex_table(
+                    report,
+                    tableau,
+                    basis,
+                    names,
+                    f"Симплекс-таблица, итерация {iteration}",
+                    pivot_column=entering,
+                )
                 raise ValueError("Целевая функция не ограничена на допустимой области.")
             leaving = min(
                 candidates,
@@ -191,6 +216,15 @@ def _solve_dual_simplex_impl(
                 f"симплекс-шагом. Входит {names[entering]}."
             )
 
+        append_simplex_table(
+            report,
+            tableau,
+            basis,
+            names,
+            f"Симплекс-таблица, итерация {iteration}",
+            pivot_column=entering,
+            pivot_row=leaving,
+        )
         pivot(leaving, entering)
     else:
         raise ValueError("Превышено максимальное количество итераций.")

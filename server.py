@@ -21,12 +21,17 @@ from linear_programming.math_tasks.dual_simplex import solve_dual_simplex
 from linear_programming.math_tasks.optimality import check_optimality
 from linear_programming.math_tasks.primal_dual import solve_primal_dual
 from linear_programming.math_tasks.simplex import solve_simplex
-from linear_programming.math_tasks.steps import FormattedSystem, ReportText
+from linear_programming.math_tasks.steps import (
+    FormattedFunction,
+    FormattedSystem,
+    ReportText,
+    SimplexTableStyle,
+)
 from linear_programming.math_tasks.standard_form import to_standard_form
 from linear_programming.math_tasks.transport import solve_transport
 from linear_programming.problem import create_problem
 from linear_programming.display_methods import (
-    format_math_expression,
+    format_math_function,
     format_system_of_equations,
 )
 
@@ -150,7 +155,12 @@ def _run_solver(function: Any, *args: Any) -> str:
             str(value) if value is not None else ""
         )
         text = "\n\n".join(part for part in (steps, returned) if part)
-        return ReportText(text, getattr(steps, "formatted_systems", ()))
+        return ReportText(
+            text,
+            formatted_systems=getattr(steps, "formatted_systems", ()),
+            formatted_functions=getattr(steps, "formatted_functions", ()),
+            simplex_table_styles=getattr(steps, "simplex_table_styles", ()),
+        )
 
     returned = result if isinstance(result, str) else (
         str(result) if result is not None else ""
@@ -224,7 +234,7 @@ def solve_task(payload: Any) -> str:
     return _run_solver(solver, *solver_args)
 
 
-def _form_value(values: dict[str, str], name: str, default: str = "") -> str:
+def _form_value(values: dict[str, str], name: str, default: str = "0") -> str:
     return values.get(name, default)
 
 
@@ -436,12 +446,18 @@ def _render_transport_result(result: str) -> str:
                 break
             index += 1
 
-    return "".join(rendered)
+    return (
+        '<section class="transport-result">'
+        + "".join(rendered)
+        + "</section>"
+    )
 
 
 def _render_algorithm_result(
     result: str,
     formatted_systems: tuple[FormattedSystem, ...] = (),
+    formatted_functions: tuple[FormattedFunction, ...] = (),
+    simplex_table_styles: tuple[SimplexTableStyle, ...] = (),
 ) -> str:
     """Render plain solver output as semantic HTML and tables."""
     lines = [_ANSI_ESCAPE.sub("", line).rstrip() for line in result.splitlines()]
@@ -451,21 +467,41 @@ def _render_algorithm_result(
     def split_row(line: str) -> list[str]:
         return [cell.strip() for cell in re.split(r"\s{2,}", line.strip())]
 
-    def render_table(header: list[str], rows: list[list[str]], delta: list[str]) -> str:
+    def render_table(
+        header: list[str],
+        rows: list[list[str]],
+        delta: list[str],
+        style: SimplexTableStyle | None,
+    ) -> str:
         table = [
             '<div class="algorithm-result-scroll">'
             '<table class="algorithm-result-table"><thead><tr>'
         ]
-        table.extend(
-            f'<th scope="col">{html.escape(cell)}</th>' for cell in header
-        )
+        for cell in header:
+            css_class = (
+                ' class="pivot-column"'
+                if style is not None and cell == style.pivot_column
+                else ""
+            )
+            table.append(
+                f'<th scope="col"{css_class}>{html.escape(cell)}</th>'
+            )
         table.append("</tr></thead><tbody>")
         for row in rows:
-            table.append("<tr>")
-            table.append(f'<th scope="row">{html.escape(row[0])}</th>')
-            table.extend(
-                f"<td>{html.escape(cell)}</td>" for cell in row[1:]
+            pivot_row = style is not None and row[0] == style.pivot_row
+            table.append(
+                '<tr class="pivot-row">' if pivot_row else "<tr>"
             )
+            table.append(f'<th scope="row">{html.escape(row[0])}</th>')
+            for index, cell in enumerate(row[1:], start=1):
+                css_class = (
+                    ' class="pivot-column"'
+                    if style is not None
+                    and index < len(header)
+                    and header[index] == style.pivot_column
+                    else ""
+                )
+                table.append(f"<td{css_class}>{html.escape(cell)}</td>")
             table.append("</tr>")
         table.append("</tbody>")
         if delta:
@@ -496,12 +532,26 @@ def _render_algorithm_result(
         return (
             text.startswith("Система уравнений")
             or text.startswith("Система после приведения")
+            or text.startswith("Система после нормализации")
             or text in ("Ограничения", "Добавляем базисные переменные")
         )
 
     def is_equation(line: str) -> bool:
         return "=" in line and "->" not in line
 
+    function_pattern = re.compile(r"(?:f\(x\)|g\(y\)|[Ff])\s*=", re.IGNORECASE)
+
+    def render_function(expression: str) -> str:
+        return next(
+            (
+                function.html
+                for function in formatted_functions
+                if function.expression == expression
+            ),
+            format_math_function(expression),
+        )
+
+    table_style_index = 0
     while index < len(lines):
         text = lines[index].strip()
         if not text or is_rule(text):
@@ -537,9 +587,33 @@ def _render_algorithm_result(
                 break
 
             if rows:
-                rendered.append(render_table(header, rows, delta))
+                style = (
+                    simplex_table_styles[table_style_index]
+                    if table_style_index < len(simplex_table_styles)
+                    else None
+                )
+                rendered.append(render_table(header, rows, delta, style))
+                table_style_index += 1
                 index = cursor
                 continue
+
+        function_match = function_pattern.search(text)
+        if function_match:
+            prefix = text[:function_match.start()].strip()
+            expression = text[function_match.start():].strip()
+            if prefix:
+                if is_heading(prefix):
+                    rendered.append(
+                        '<h3 class="algorithm-result-heading">'
+                        f"{html.escape(prefix.rstrip(':'))}</h3>"
+                    )
+                else:
+                    rendered.append(
+                        f'<p class="algorithm-result-text">{html.escape(prefix)}</p>'
+                    )
+            rendered.append(render_function(expression))
+            index += 1
+            continue
 
         if is_heading(text):
             rendered.append(
@@ -557,10 +631,7 @@ def _render_algorithm_result(
                     index += 1
                     continue
                 if equation.startswith("F =") and "->" in equation:
-                    rendered.append(
-                        '<p class="algorithm-result-text math-expression">'
-                        f"{format_math_expression(equation)}</p>"
-                    )
+                    rendered.append(render_function(equation))
                     index += 1
                     continue
                 if not is_equation(equation):
@@ -749,21 +820,16 @@ def render_task_page(
     if error:
         form.append(f'<p class="error">{html.escape(error)}</p>')
     if result is not None:
-        clean_result = _ANSI_ESCAPE.sub("", result)
-        form.append('<h2>Результат</h2>')
+        form.append('<h2 class="result-heading">Результат</h2>')
         if task_id == "transport":
             form.append(_render_transport_result(result))
-        elif task_id == "artificial_basis":
-            form.append(
-                '<textarea readonly rows="18" cols="90">'
-                + html.escape(clean_result)
-                + "</textarea>"
-            )
         else:
             form.append(
                 _render_algorithm_result(
-                    clean_result,
+                    result,
                     getattr(result, "formatted_systems", ()),
+                    getattr(result, "formatted_functions", ()),
+                    getattr(result, "simplex_table_styles", ()),
                 )
             )
 

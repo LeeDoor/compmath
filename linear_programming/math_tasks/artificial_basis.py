@@ -1,12 +1,73 @@
-"""Решение задачи методом искусственного базиса."""
+"""Решение задачи линейного программирования методом искусственного базиса."""
 
 import numpy as np
 import numpy.typing as npt
 
-from ..problem import Sense
-from .canonical_form import make_canonical
-from .simplex import ConstraintSign, VariableConstraint, _run_simplex_tableau_impl
+from ..display_methods import format_math_function, format_system_of_equations
+from ..problem import Sense, create_problem
+from .canonical_form import format_equation, make_canonical
+from .simplex import (
+    ConstraintSign,
+    VariableConstraint,
+    _run_simplex_tableau_impl,
+    append_simplex_table,
+)
 from .steps import StepReport
+
+
+def _pivot(tableau: np.ndarray, row: int, column: int, eps: float) -> None:
+    """Шаг симплекса (пересчет таблицы)."""
+    pivot_value = tableau[row, column]
+    if abs(pivot_value) <= eps:
+        raise ValueError("Невозможно выполнить преобразование: разрешающий элемент равен нулю.")
+
+    tableau[row, :] /= pivot_value
+    for i in range(tableau.shape[0] - 1):
+        if i == row:
+            continue
+        factor = tableau[i, column]
+        if abs(factor) > eps:
+            tableau[i, :] -= factor * tableau[row, :]
+
+
+def _recompute_objective_row(
+    tableau: np.ndarray,
+    basis: list[int],
+    costs: np.ndarray,
+    eps: float,
+) -> None:
+    """Пересчитать строку оценок Δ = c_B·A - c и значение F = c_B·b."""
+    row_count = tableau.shape[0] - 1
+    basic_costs = np.array([costs[index] for index in basis])
+    tableau[-1, :-1] = basic_costs @ tableau[:row_count, :-1] - costs
+    tableau[-1, -1] = float(basic_costs @ tableau[:row_count, -1])
+    tableau[np.abs(tableau) < eps] = 0.0
+
+
+def _find_initial_basis(A: np.ndarray, eps: float) -> tuple[list[int], list[int]]:
+    """Найти единичные столбцы; для остальных строк понадобятся искусственные переменные."""
+    row_count, variable_count = A.shape
+    basis: list[int | None] = [None] * row_count
+    used_columns: set[int] = set()
+
+    for column in range(variable_count):
+        values = A[:, column]
+        ones = np.where(np.abs(values - 1.0) < eps)[0]
+        zeros = np.where(np.abs(values) < eps)[0]
+        if len(ones) != 1 or len(zeros) != row_count - 1:
+            continue
+        row = int(ones[0])
+        if basis[row] is not None or column in used_columns:
+            continue
+        basis[row] = column
+        used_columns.add(column)
+
+    artificial_rows = [row for row, value in enumerate(basis) if value is None]
+    artificial_start = variable_count
+    for offset, row in enumerate(artificial_rows):
+        basis[row] = artificial_start + offset
+
+    return [int(value) for value in basis], artificial_rows
 
 
 def _solve_artificial_basis_impl(
@@ -19,167 +80,230 @@ def _solve_artificial_basis_impl(
     *,
     report: StepReport,
 ) -> np.matrix:
-    """Решить задачу методом искусственного базиса."""
-    eps = 1e-10
+    eps = 1e-9
+    problem = create_problem(A, b, c, sense)
+    A_original = np.asarray(problem.A, dtype=float)
+    b_original = np.asarray(problem.b, dtype=float).reshape(-1)
+    c_original = np.asarray(problem.c, dtype=float).reshape(-1)
+    original_variable_count = A_original.shape[1]
+    if variable_constraints is None:
+        variable_constraints = ["nonnegative"] * original_variable_count
 
-    # 1. Приведение задачи к канонической форме.
-    report.add("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
-    A, b, c, decision_count = make_canonical(
-        A,
-        b,
-        c,
+    A_can, b_can, c_can, decision_count = make_canonical(
+        A_original,
+        b_original,
+        c_original,
         sense,
         constraint_signs,
         variable_constraints,
     )
-
-    A = A.copy()
-    b = b.copy()
-    c = c.copy()
-
-    m, n = A.shape
-
-    report.add("\nМатрица A:")
-    report.add(A)
-    report.add("\nВектор b:")
-    report.add(b)
-    report.add("\nЦелевая функция:")
-    report.add(c)
-
-    # 2. Делаем правые части неотрицательными.
-    report.add("\nПРИВЕДЕНИЕ ПРАВЫХ ЧАСТЕЙ К НЕОТРИЦАТЕЛЬНОМУ ВИДУ")
-    for i in range(m):
-        if b[i] < -eps:
-            A[i, :] *= -1
-            b[i] *= -1
-            report.add(f"Уравнение {i + 1} умножено на -1.")
-
-    b[np.abs(b) < eps] = 0
-
-    # 3. Добавляем искусственные переменные и формируем начальный базис.
-    report.add("\nДОБАВЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
-    total_columns = n + m
-    tableau = np.zeros((m + 1, total_columns + 1))
-    tableau[:m, :n] = A
-    tableau[:m, n:total_columns] = np.eye(m)
-    tableau[:m, -1] = b
-
-    basis = list(range(n, total_columns))
-    names = [f"x{i + 1}" for i in range(total_columns)]
-
-    report.add("Добавлены искусственные переменные:")
-    report.add(", ".join(names[n:]))
-
-    # 4. Первая фаза: минимизируем сумму искусственных переменных,
-    # что эквивалентно максимизации её отрицательного значения.
-    report.add("\nЭТАП 1. ВСПОМОГАТЕЛЬНАЯ ЗАДАЧА")
-    phase_one_costs = np.zeros(total_columns)
-    phase_one_costs[n:] = -1
-
-    tableau, basis, _ = _run_simplex_tableau_impl(
-        tableau,
-        basis,
-        phase_one_costs,
-        report,
-        names,
-        title="Первый этап",
-        eps=eps,
+    A_can = np.asarray(A_can, dtype=float)
+    b_can = np.asarray(b_can, dtype=float).reshape(-1)
+    c_can = np.asarray(c_can, dtype=float).reshape(-1)
+    variable_count = A_can.shape[1]
+    canonical_names = []
+    for index, option in enumerate(variable_constraints):
+        if option == "free":
+            canonical_names.extend((f"x'{index + 1}", f"x''{index + 1}"))
+        else:
+            canonical_names.append(f"x{index + 1}")
+    canonical_names.extend(
+        f"x{index}"
+        for index in range(
+            original_variable_count + 1,
+            original_variable_count + variable_count - decision_count + 1,
+        )
     )
 
-    phase_one_value = sum(
-        phase_one_costs[basis[i]] * tableau[i, -1]
-        for i in range(len(basis))
+    report.add("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
+    canonical_function = (
+        f"F = {format_equation(c_can, canonical_names)} -> max"
+    )
+    report.add_formatted_function(
+        canonical_function,
+        format_math_function(canonical_function),
+    )
+    canonical_equations = [
+        f"{format_equation(row, canonical_names)} = {value:g}"
+        for row, value in zip(A_can, b_can)
+    ]
+    report.add_formatted_system(
+        canonical_equations,
+        format_system_of_equations(canonical_equations),
+        heading="Система после приведения к канонической форме:",
     )
 
-    if phase_one_value < -eps:
-        raise ValueError(
-            "Исходная задача несовместна: "
-            "искусственные переменные не удалось обнулить."
+    negative_rhs_rows = np.flatnonzero(b_can < -eps)
+    if len(negative_rhs_rows):
+        for row in negative_rhs_rows:
+            A_can[row, :] *= -1
+            b_can[row] *= -1
+    b_can[np.abs(b_can) < eps] = 0.0
+    A_can[np.abs(A_can) < eps] = 0.0
+    if len(negative_rhs_rows):
+        normalized_equations = [
+            f"{format_equation(row, canonical_names)} = {value:g}"
+            for row, value in zip(A_can, b_can)
+        ]
+        report.add_formatted_system(
+            normalized_equations,
+            format_system_of_equations(normalized_equations),
+            heading="Система после нормализации b:",
         )
 
-    report.add("\nВспомогательная задача решена.")
-    report.add("Сумма искусственных переменных равна нулю.")
+    basis, artificial_rows = _find_initial_basis(A_can, eps)
+    artificial_count = len(artificial_rows)
+    artificial_columns = set(range(variable_count, variable_count + artificial_count))
 
-    # 5. Удаляем искусственные переменные из базиса.
-    report.add("\nУДАЛЕНИЕ ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ")
-    rows_to_remove = []
+    if artificial_count:
+        artificial_matrix = np.zeros((A_can.shape[0], artificial_count))
+        for index, row in enumerate(artificial_rows):
+            artificial_matrix[row, index] = 1.0
+        A_phase_one = np.column_stack((A_can, artificial_matrix))
+    else:
+        A_phase_one = A_can.copy()
 
-    for i in range(len(basis)):
-        if basis[i] < n:
-            continue
+    total_cols = A_phase_one.shape[1]
+    variable_names = canonical_names + [
+        f"w{i + 1}" for i in range(artificial_count)
+    ]
 
-        entering = None
-        for j in range(n):
-            if j not in basis and abs(tableau[i, j]) > eps:
-                entering = j
+    tableau = np.zeros((A_can.shape[0] + 1, total_cols + 1))
+    tableau[:-1, :-1] = A_phase_one
+    tableau[:-1, -1] = b_can
+
+    if artificial_columns:
+        phase_one_costs = np.zeros(total_cols)
+        phase_one_costs[list(artificial_columns)] = -1.0
+        artificial_names = [
+            variable_names[column] for column in sorted(artificial_columns)
+        ]
+        report.add(
+            "\nНачальный базис неполный. Добавлены искусственные переменные: "
+            + ", ".join(artificial_names)
+            + "."
+        )
+        report.add(
+            "\nПЕРВАЯ ФАЗА: МАКСИМИЗАЦИЯ ОТРИЦАТЕЛЬНОЙ СУММЫ "
+            "ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ"
+        )
+        report.add(
+            "Вспомогательная целевая функция: F1 = -"
+            + " - ".join(artificial_names)
+            + " -> max"
+        )
+        _recompute_objective_row(tableau, basis, phase_one_costs, eps)
+        tableau, basis, _ = _run_simplex_tableau_impl(
+            tableau,
+            basis,
+            phase_one_costs,
+            report,
+            variable_names,
+            title="МИБ. Первая фаза",
+            eps=eps,
+        )
+
+        if tableau[-1, -1] < -eps:
+            raise ValueError(
+                "Задача несовместна: искусственные переменные не удалось "
+                "вывести из базиса."
+            )
+
+        report.add(
+            "\nОптимум первой фазы достигнут; выводим искусственные "
+            "переменные из базиса."
+        )
+        while True:
+            row_idx = next(
+                (
+                    row
+                    for row, variable in enumerate(basis)
+                    if variable in artificial_columns
+                ),
+                None,
+            )
+            if row_idx is None:
                 break
 
-        if entering is None:
-            if abs(tableau[i, -1]) > eps:
+            if abs(tableau[row_idx, -1]) > eps:
                 raise ValueError(
-                    "Не удалось удалить искусственную переменную."
+                    "Задача несовместна: искусственная базисная переменная "
+                    "имеет ненулевое значение."
                 )
-            rows_to_remove.append(i)
-            continue
+            tableau[row_idx, -1] = 0.0
+            candidates = [
+                column
+                for column in range(variable_count)
+                if column not in basis and abs(tableau[row_idx, column]) > eps
+            ]
+            if candidates:
+                entering = candidates[0]
+                _pivot(tableau, row_idx, entering, eps)
+                basis[row_idx] = entering
+                _recompute_objective_row(tableau, basis, phase_one_costs, eps)
+                append_simplex_table(
+                    report,
+                    tableau,
+                    basis,
+                    variable_names,
+                    "Таблица после вывода искусственной переменной из базиса",
+                )
+            else:
+                report.add(
+                    f"Строка {row_idx + 1} линейно зависима и удаляется."
+                )
+                tableau = np.delete(tableau, row_idx, axis=0)
+                basis.pop(row_idx)
 
-        pivot = tableau[i, entering]
-        tableau[i, :] /= pivot
+        report.add("\nИскусственные переменные удалены из таблицы.")
+        keep_columns = [
+            column
+            for column in range(total_cols)
+            if column not in artificial_columns
+        ]
+        tableau = np.column_stack((tableau[:, keep_columns], tableau[:, -1]))
+        variable_names = canonical_names
+    else:
+        tableau = np.zeros((A_can.shape[0] + 1, variable_count + 1))
+        tableau[:-1, :-1] = A_can
+        tableau[:-1, -1] = b_can
 
-        # Пересчитываем остальные строки ограничений.
-        for k in range(len(basis)):
-            if k == i:
-                continue
-            factor = tableau[k, entering]
-            tableau[k, :] -= factor * tableau[i, :]
-
-        basis[i] = entering
-
-    # Удаляем избыточные ограничения.
-    for i in reversed(rows_to_remove):
-        tableau = np.delete(tableau, i, axis=0)
-        basis.pop(i)
-
-    # Удаляем столбцы искусственных переменных, сохраняя столбец b.
-    tableau = np.column_stack([tableau[:, :n], tableau[:, -1]])
-    names = names[:n]
-    tableau[np.abs(tableau) < eps] = 0
-
-    report.add("\nИскусственные переменные удалены.")
-
-    # 6. Вторая фаза: решаем исходную задачу тем же симплекс-алгоритмом.
-    report.add("\nЭТАП 2. РЕШЕНИЕ ИСХОДНОЙ ЗАДАЧИ")
+    if artificial_columns:
+        report.add("\nПЕРЕХОД К ИСХОДНОЙ ЦЕЛЕВОЙ ФУНКЦИИ")
+    else:
+        report.add("\nНачальный базис найден. Выполняем симплекс-метод.")
     tableau, basis, _ = _run_simplex_tableau_impl(
         tableau,
         basis,
-        c,
+        c_can,
         report,
-        names,
-        title="Второй этап",
+        variable_names,
+        title="Симплекс-метод",
         eps=eps,
     )
 
-    # 7. Получаем итоговое решение.
-    solution = np.zeros(n)
-    for i, basic in enumerate(basis):
-        solution[basic] = tableau[i, -1]
+    # Восстанавливаем решение
+    canonical_solution = np.zeros(variable_count)
+    for i, variable in enumerate(basis):
+        canonical_solution[variable] = tableau[i, -1]
+    canonical_solution[np.abs(canonical_solution) < eps] = 0.0
 
-    solution[np.abs(solution) < eps] = 0
-    objective_value = float(np.dot(c, solution))
+    solution = np.zeros(original_variable_count)
+    position = 0
+    for i, constraint in enumerate(variable_constraints):
+        if constraint == "free":
+            solution[i] = canonical_solution[position] - canonical_solution[position + 1]
+            position += 2
+        else:
+            solution[i] = canonical_solution[position]
+            position += 1
 
-    # make_canonical переводит min в max, меняя знак c.
-    if sense == "min":
-        objective_value = -objective_value
-
-    report.add("\nИТОГОВОЕ РЕШЕНИЕ")
-    report.add("-" * 40)
-    report.add(
-        "x* = ("
-        + ", ".join(f"{value:g}" for value in solution[:decision_count])
-        + ")"
-    )
+    objective_value = float(np.dot(c_original, solution))
+    report.add("\nИТОГОВЫЙ РЕЗУЛЬТАТ")
+    report.add("x* = (" + ", ".join(f"{value:g}" for value in solution) + ")")
     report.add(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
 
-    return np.matrix(solution[:decision_count].reshape(1, -1))
+    return np.matrix(solution.reshape(1, -1))
 
 
 def solve_artificial_basis(
@@ -190,14 +314,13 @@ def solve_artificial_basis(
     constraint_signs: list[ConstraintSign] | None = None,
     variable_constraints: list[VariableConstraint] | None = None,
 ) -> tuple[np.matrix, str]:
+    """Решить задачу методом искусственного базиса."""
     report = StepReport()
-    result = _solve_artificial_basis_impl(
-        A,
-        b,
-        c,
-        sense,
-        constraint_signs,
-        variable_constraints,
-        report=report,
-    )
+    try:
+        result = _solve_artificial_basis_impl(
+            A, b, c, sense, constraint_signs, variable_constraints, report=report
+        )
+    except Exception as e:
+        report.add(f"\n\nОШИБКА: {e}")
+        result = np.matrix([[]])
     return result, report.get_text()
