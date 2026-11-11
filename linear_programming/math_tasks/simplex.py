@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
-from ..display_methods import format_system_of_equations
+from ..display_methods import format_math_function, format_system_of_equations
 from ..problem import Sense, create_problem
 from .steps import StepReport
 
@@ -21,6 +21,8 @@ def append_simplex_table(
     basis: list[int],
     variable_names: list[str],
     title: str,
+    pivot_column: int | None = None,
+    pivot_row: int | None = None,
 ) -> None:
     """Append a simplex tableau using the shared dual-simplex layout."""
     tableau[np.abs(tableau) < 1e-10] = 0.0
@@ -29,6 +31,10 @@ def append_simplex_table(
         column for column in range(variable_count) if column not in basis
     ]
 
+    report.add_simplex_table_style(
+        variable_names[pivot_column] if pivot_column is not None else None,
+        variable_names[basis[pivot_row]] if pivot_row is not None else None,
+    )
     report.add(f"\n{title}:")
     report.add(
         f"{'Базис':>8}"
@@ -41,11 +47,9 @@ def append_simplex_table(
             + "".join(f"{tableau[row, column]:12.4g}" for column in nonbasic)
             + f"{tableau[row, -1]:12.4g}"
         )
-    # Выводим оценки для всех внебазисных столбцов И для столбца b (значение F)
     report.add(
         f"{'Δ':>8}"
         + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
-        + f"{tableau[-1, -1]:12.4g}"
     )
 
 
@@ -78,13 +82,19 @@ def _run_simplex_tableau_impl(
 
     non_basis = [j for j in range(variable_count) if j not in basis]
 
-    def append_table(number: int) -> None:
+    def append_table(
+        number: int,
+        pivot_column: int | None = None,
+        pivot_row: int | None = None,
+    ) -> None:
         append_simplex_table(
             report,
             tableau,
             basis,
             variable_names,
             f"{title}. СИМПЛЕКСНАЯ ТАБЛИЦА №{number}",
+            pivot_column,
+            pivot_row,
         )
 
         report.add("\nОценки Δ всех переменных:")
@@ -95,29 +105,6 @@ def _run_simplex_tableau_impl(
                 delta = 0.0
             deltas.append(f"{variable_names[j]}: {delta:.4f}")
         report.add("    ".join(deltas))
-
-    def append_equations() -> None:
-        equations = []
-        for i in range(row_count):
-            terms = []
-            for j in range(variable_count):
-                if j == basis[i]:
-                    continue
-                coefficient = tableau[i, j]
-                if abs(coefficient) < eps:
-                    continue
-                terms.append(f"({coefficient:.4f})*{variable_names[j]}")
-
-            b_val = 0.0 if abs(tableau[i, -1]) < eps else tableau[i, -1]
-            equation = f"{variable_names[basis[i]]} = {b_val:.4f}"
-            if terms:
-                equation += " - " + " - ".join(terms)
-            equations.append(equation)
-        report.add_formatted_system(
-            equations,
-            format_system_of_equations(equations),
-            heading="Система уравнений текущего базиса:",
-        )
 
     for iteration in range(1, max_iterations + 1):
         tableau[np.abs(tableau) < eps] = 0.0
@@ -133,79 +120,60 @@ def _run_simplex_tableau_impl(
         tableau[np.abs(tableau) < eps] = 0.0
 
         report.add(f"\n\n{title.upper()}. ИТЕРАЦИЯ №{iteration}")
-        append_table(iteration)
-        append_equations()
+        report.add(
+            "Базисные переменные: "
+            + ", ".join(variable_names[index] for index in basis)
+        )
 
         candidates = [j for j in non_basis if tableau[-1, j] < -eps]
         if not candidates:
+            append_table(iteration)
             report.add("\nВсе оценки Δ неотрицательны.")
             report.add("Получено оптимальное решение.")
             return tableau, basis, non_basis
 
         entering = min(candidates, key=lambda j: tableau[-1, j])
-        report.add(f"\nРазрешающий столбец: {variable_names[entering]}")
-        report.add(f"Оценка Δ = {tableau[-1, entering]:.4f}")
 
         ratios = []
-        report.add("\nВычисление отношений b_i / a_ij:")
+        ratio_steps = []
         for i in range(row_count):
             coefficient = tableau[i, entering]
             if coefficient > eps:
                 ratio = tableau[i, -1] / coefficient
                 ratios.append((ratio, i))
-                report.add(
+                ratio_steps.append(
                     f"Строка {variable_names[basis[i]]}: "
                     f"{tableau[i, -1]:.4f} / {coefficient:.4f} = {ratio:.4f}"
                 )
             else:
-                report.add(
+                ratio_steps.append(
                     f"Строка {variable_names[basis[i]]}: "
                     "не подходит (коэффициент <= 0)"
                 )
 
         if not ratios:
-            # Формируем текущее допустимое решение
-            current_solution = np.zeros(variable_count)
-            for i, var_idx in enumerate(basis):
-                current_solution[var_idx] = tableau[i, -1]
-
-            report.add(
-                f"\nВ разрешающем столбце {variable_names[entering]} все коэффициенты "
-                f"a_ij <= 0."
-            )
-            report.add(
-                "Это означает, что при увеличении этой переменной целевая функция "
-                "неограниченно растёт, а ограничения её не сдерживают."
-            )
-            report.add(
-                f"Направление ухода в бесконечность: увеличиваем {variable_names[entering]}."
-            )
-            report.add(
-                "Текущий базис: "
-                + ", ".join(variable_names[i] for i in basis)
-            )
-            report.add(f"Текущее (допустимое) значение F = {objective_value:.6g}")
-            report.add(
-                "ВЫВОД: НР2"
-            )
-
-            # Возвращаем текущее решение, чтобы интерфейс мог его отобразить,
-            # и сигнализируем об неограниченности через специальный флаг в конце.
-            # (Мы не выбрасываем ошибку, чтобы можно было вернуть решение).
-            return tableau, basis, non_basis, current_solution, objective_value, True
+            append_table(iteration, pivot_column=entering)
+            report.add(f"\nРазрешающий столбец: {variable_names[entering]}")
+            report.add(f"Оценка Δ = {tableau[-1, entering]:.4f}")
+            report.add("\nВычисление отношений b_i / a_ij:")
+            for step in ratio_steps:
+                report.add(step)
+            raise ValueError("Целевая функция не ограничена на допустимой области.")
 
         _, leaving = min(ratios)
         pivot = tableau[leaving, entering]
         leaving_variable = basis[leaving]
 
+        append_table(iteration, pivot_column=entering, pivot_row=leaving)
+        report.add(f"\nРазрешающий столбец: {variable_names[entering]}")
+        report.add(f"Оценка Δ = {tableau[-1, entering]:.4f}")
+        report.add("\nВычисление отношений b_i / a_ij:")
+        for step in ratio_steps:
+            report.add(step)
         report.add(
             f"\nРазрешающая строка: {variable_names[leaving_variable]}"
         )
         report.add(f"Разрешающий элемент: {pivot:.4f}")
-        report.add(
-            f"\nИз базиса выходит {variable_names[leaving_variable]}, "
-            f"в базис входит {variable_names[entering]}."
-        )
 
         tableau[leaving, :] /= pivot
         for i in range(row_count + 1):
@@ -218,11 +186,7 @@ def _run_simplex_tableau_impl(
         basis[leaving] = entering
         non_basis[entering_position] = leaving_variable
 
-        tableau[np.abs(tableau) < eps] = 0.0
-        report.add("\nТаблица после пересчёта:")
-        append_table(iteration + 1)
-        append_equations()
-
+        tableau[np.abs(tableau) < eps] = 0
     raise ValueError("Превышено максимальное количество итераций.")
 
 
@@ -240,220 +204,247 @@ def _solve_simplex_impl(
     """Решить задачу линейного программирования обычным симплекс-методом."""
     eps = 1e-10
 
-    problem = create_problem(A, b, c, sense)
-    A_mat = np.asarray(problem.A, dtype=float)
-    b_vec = np.asarray(problem.b, dtype=float).reshape(-1)
-    original_c = np.asarray(problem.c, dtype=float).reshape(-1)
-    m, n = A_mat.shape
+    from .canonical_form import format_equation, make_canonical
 
-    if constraint_signs is None:
-        constraint_signs = ["<="] * m
-    elif len(constraint_signs) != m or any(
-        sign not in ("<=", ">=", "=") for sign in constraint_signs
-    ):
-        raise ValueError(
-            "constraint_signs должны задавать знак '<=', '>=' или '=' "
-            "для каждого ограничения."
+    problem = create_problem(A, b, c, sense)
+    original_c = np.asarray(problem.c, dtype=float).reshape(-1)
+    original_variable_count = len(original_c)
+    canonical_matrix, canonical_rhs, canonical_costs, decision_count = (
+        make_canonical(
+            problem.A,
+            problem.b,
+            problem.c,
+            sense,
+            constraint_signs,
+            variable_constraints,
+        )
+    )
+    canonical_matrix = canonical_matrix.copy()
+    canonical_rhs = canonical_rhs.copy()
+    canonical_costs = canonical_costs.copy()
+    row_count, variable_count = canonical_matrix.shape
+
+    variable_options = (
+        ["nonnegative"] * original_variable_count
+        if variable_constraints is None
+        else list(variable_constraints)
+    )
+    variable_names = []
+    transformed_index = 0
+    for index, option in enumerate(variable_options):
+        if option == "free":
+            variable_names.extend((f"x'{index + 1}", f"x''{index + 1}"))
+            transformed_index += 2
+        else:
+            variable_names.append(f"x{index + 1}")
+            transformed_index += 1
+    variable_names.extend(
+        f"x{index}"
+        for index in range(
+            original_variable_count + 1,
+            original_variable_count + variable_count - decision_count + 1,
+        )
+    )
+
+    report.add("\nПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ")
+    canonical_function = (
+        f"F = {format_equation(canonical_costs, variable_names)} -> max"
+    )
+    report.add_formatted_function(
+        canonical_function,
+        format_math_function(canonical_function),
+    )
+    canonical_equations = [
+        f"{format_equation(row, variable_names)} = {value:g}"
+        for row, value in zip(canonical_matrix, canonical_rhs)
+    ]
+    report.add_formatted_system(
+        canonical_equations,
+        format_system_of_equations(canonical_equations),
+        heading="Система после приведения к канонической форме:",
+    )
+
+    negative_rhs_rows = np.flatnonzero(canonical_rhs < -eps)
+    if len(negative_rhs_rows):
+        report.add("\nПРИВЕДЕНИЕ ПРАВЫХ ЧАСТЕЙ К НЕОТРИЦАТЕЛЬНОМУ ВИДУ")
+        for row in negative_rhs_rows:
+            canonical_matrix[row, :] *= -1
+            canonical_rhs[row] *= -1
+            report.add(f"Уравнение {row + 1} умножено на -1.")
+    else:
+        report.add("\nВсе элементы вектора b неотрицательны.")
+
+    canonical_rhs[np.abs(canonical_rhs) < eps] = 0
+    canonical_matrix[np.abs(canonical_matrix) < eps] = 0
+    normalized_equations = [
+        f"{format_equation(row, variable_names)} = {value:g}"
+        for row, value in zip(canonical_matrix, canonical_rhs)
+    ]
+    if len(negative_rhs_rows):
+        report.add_formatted_system(
+            normalized_equations,
+            format_system_of_equations(normalized_equations),
+            heading="Система после нормализации b:",
         )
 
-    if any(sign == ">=" for sign in constraint_signs):
-        raise ValueError("Ограничения со знаком '>=' этим вариантом симплекс-метода не поддерживаются.")
-
-    free_vars = []
-    if variable_constraints is not None:
-        free_vars = [i for i, vc in enumerate(variable_constraints) if vc == "free"]
-
-    if free_vars:
-        report.add("\nОБРАБОТКА СВОБОДНЫХ ПЕРЕМЕННЫХ:")
-        A_list = []
-        c_list = []
-        names_list = []
-        for i in range(n):
-            if i in free_vars:
-                report.add(f"Переменная x{i + 1} свободна => замена: x{i + 1} = x'{i + 1} - x''{i + 1}")
-                A_list.append(A_mat[:, i:i+1])
-                A_list.append(-A_mat[:, i:i+1])
-                c_list.extend([original_c[i], -original_c[i]])
-                names_list.extend([f"x'{i+1}", f"x''{i+1}"])
-            else:
-                A_list.append(A_mat[:, i:i+1])
-                c_list.append(original_c[i])
-                names_list.append(f"x{i+1}")
-
-        A_work = np.hstack(A_list)
-        c_work = np.array(c_list)
-    else:
-        A_work = A_mat.copy()
-        c_work = original_c.copy()
-        names_list = [f"x{i + 1}" for i in range(n)]
-
-    n_work = A_work.shape[1]
-
-    b_vec[np.abs(b_vec) < eps] = 0.0
-    work_c = c_work.copy()
-    if sense == "min":
-        work_c = -work_c
-
-    if "=" in constraint_signs:
-        slack_rows = [i for i, sign in enumerate(constraint_signs) if sign == "<="]
-        slack_matrix = np.zeros((m, len(slack_rows)))
-        for column, row in enumerate(slack_rows):
-            slack_matrix[row, column] = 1.0
-
-        A_augmented = np.column_stack((A_work, slack_matrix))
-        total_variable_count = A_augmented.shape[1]
-        full_costs = np.concatenate((work_c, np.zeros(len(slack_rows))))
-        variable_names = names_list + [
-            f"x{n_work + row + 1}" for row in slack_rows
+    column_support = np.abs(canonical_matrix) > eps
+    basis = []
+    for row in range(row_count):
+        candidates = [
+            column
+            for column in range(variable_count)
+            if column_support[row, column]
+            and column_support[:, column].sum() == 1
+            and canonical_matrix[row, column] > eps
         ]
-
-        basis = None
-        initial_values = None
-        for candidate in combinations(range(total_variable_count), m):
-            basis_matrix = A_augmented[:, candidate]
-            try:
-                values = np.linalg.solve(basis_matrix, b_vec)
-            except np.linalg.LinAlgError:
-                continue
-            if np.all(values >= -eps):
-                basis = list(candidate)
-                initial_values = values
-                break
-
-        if basis is None:
+        candidates.sort(key=lambda column: column < decision_count)
+        if not candidates:
             raise ValueError(
-                "Не удалось подобрать допустимый начальный базис для ограничений '='. "
-                "Без метода искусственного базиса задача может быть неразрешима этим способом."
+                "Нет допустимого начального базиса. Используйте МИБ."
             )
+        basis.append(candidates[0])
 
-        basis_matrix = A_augmented[:, basis]
-        canonical_A = np.linalg.solve(basis_matrix, A_augmented)
-        canonical_b = np.linalg.solve(basis_matrix, b_vec)
-        tableau = np.zeros((m + 1, total_variable_count + 1))
-        tableau[:m, :-1] = canonical_A
-        tableau[:m, -1] = canonical_b
-    else:
-        if np.any(b_vec < -eps):
-            raise ValueError(
-                "Для данного варианта симплекс-метода все b должны быть >= 0. "
-                "Рекомендуется использовать метод двойственного симплекса."
-            )
+    for row, basic_variable in enumerate(basis):
+        pivot = canonical_matrix[row, basic_variable]
+        canonical_matrix[row, :] /= pivot
+        canonical_rhs[row] /= pivot
 
-        A_augmented = np.column_stack((A_work, np.eye(m)))
-        total_variable_count = n_work + m
-        full_costs = np.zeros(total_variable_count)
-        full_costs[:n_work] = work_c
-        tableau = np.zeros((m + 1, total_variable_count + 1))
-        tableau[:m, :n_work] = A_work
-        tableau[:m, n_work:n_work + m] = np.eye(m)
-        tableau[:m, -1] = b_vec
-        basis = list(range(n_work, n_work + m))
-        variable_names = names_list + [f"x{n_work + i + 1}" for i in range(m)]
+    initial_matrix = canonical_matrix.copy()
+    tableau = np.zeros((row_count + 1, variable_count + 1))
+    tableau[:row_count, :variable_count] = canonical_matrix
+    tableau[:row_count, -1] = canonical_rhs
 
     report.add("\nИСХОДНАЯ ЗАДАЧА")
     report.add("\nЦелевая функция:")
-    report.add(
+    original_function = (
         "F = "
-        + " + ".join(f"({original_c[j]:g})*x{j + 1}" for j in range(n))
+        + " + ".join(
+            f"({original_c[j]:g})*x{j + 1}"
+            for j in range(original_variable_count)
+        )
         + f" -> {sense}"
+    )
+    report.add_formatted_function(
+        original_function,
+        format_math_function(original_function),
     )
 
     tableau, basis, non_basis = _run_simplex_tableau_impl(
         tableau,
         basis,
-        full_costs,
+        canonical_costs,
         report,
         variable_names,
         title="Симплекс-метод",
         eps=eps,
     )
 
-    extended_solution = np.zeros(total_variable_count)
+    solution = np.zeros(variable_count)
     for i, variable in enumerate(basis):
-        extended_solution[variable] = tableau[i, -1]
-
-    extended_solution[np.abs(extended_solution) < eps] = 0.0
-
-    solution = np.zeros(n)
-    idx = 0
-    for i in range(n):
-        if i in free_vars:
-            solution[i] = extended_solution[idx] - extended_solution[idx + 1]
-            idx += 2
-        else:
-            solution[i] = extended_solution[idx]
-            idx += 1
-
+        solution[variable] = tableau[i, -1]
     solution[np.abs(solution) < eps] = 0.0
-    objective_value = float(np.dot(original_c, solution))
-    if abs(objective_value) < eps:
-        objective_value = 0.0
+
+    variable_mapping = []
+    transformed_index = 0
+    for option in variable_options:
+        if option == "free":
+            variable_mapping.append((transformed_index, transformed_index + 1))
+            transformed_index += 2
+        else:
+            variable_mapping.append((transformed_index, None))
+            transformed_index += 1
+    original_solution = np.asarray(
+        [
+            solution[first]
+            if second is None
+            else solution[first] - solution[second]
+            for first, second in variable_mapping
+        ]
+    )
+    objective_value = float(np.dot(original_c, original_solution))
 
     report.add("\n\nИТОГОВЫЙ РЕЗУЛЬТАТ")
     report.add("-" * 40)
     report.add("x* = (" + ", ".join(f"{value:g}" for value in solution) + ")")
     report.add(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
 
-    # Поиск столбцов с 0 в оценках (по конспекту)
-    zero_delta_vars = [
-        j for j in non_basis if abs(tableau[-1, j]) < eps
-    ]
+    alternate_solution = None
+    zero_delta_found = False
 
-    if zero_delta_vars:
-        report.add("\nТ.к. существует столбец с '0' в Δ, существует множество решений.")
-        report.add("Выбрав разрешающим столбец, у которого '0' в Δ, получим другое опорное решение:")
+    for j in range(variable_count):
+        if j in basis or abs(tableau[-1, j]) >= eps:
+            continue
 
-        entering_zero = zero_delta_vars[0]
-        ratios = []
-        for i in range(m):
-            coeff = tableau[i, entering_zero]
-            if coeff > eps:
-                ratios.append((tableau[i, -1] / coeff, i))
+        zero_delta_found = True
+        ratios = [
+            (tableau[i, -1] / tableau[i, j], i)
+            for i in range(row_count)
+            if tableau[i, j] > eps
+        ]
 
         if ratios:
-            _, leaving_zero = min(ratios)
+            _, leaving = min(ratios)
             alt_tableau = tableau.copy()
             alt_basis = basis.copy()
-            pivot = alt_tableau[leaving_zero, entering_zero]
+            pivot = alt_tableau[leaving, j]
+            alt_tableau[leaving, :] /= pivot
 
-            alt_tableau[leaving_zero, :] /= pivot
-            for i in range(m + 1):
-                if i != leaving_zero:
-                    factor = alt_tableau[i, entering_zero]
-                    alt_tableau[i, :] -= factor * alt_tableau[leaving_zero, :]
+            for i in range(row_count + 1):
+                if i != leaving:
+                    factor = alt_tableau[i, j]
+                    alt_tableau[i, :] -= factor * alt_tableau[leaving, :]
 
-            alt_basis[leaving_zero] = entering_zero
-            alt_tableau[np.abs(alt_tableau) < eps] = 0.0
+            alt_basis[leaving] = j
+            alt_tableau[np.abs(alt_tableau) < eps] = 0
+            candidate = np.zeros(variable_count)
+            for i, variable in enumerate(alt_basis):
+                candidate[variable] = alt_tableau[i, -1]
+        else:
+            candidate = solution.copy()
+            candidate[j] = 1
+            for i, variable in enumerate(basis):
+                candidate[variable] -= tableau[i, j]
 
-            alt_extended = np.zeros(total_variable_count)
-            for i, var_idx in enumerate(alt_basis):
-                alt_extended[var_idx] = alt_tableau[i, -1]
+        if np.all(candidate >= -eps):
+            candidate_original = np.asarray(
+                [
+                    candidate[first]
+                    if second is None
+                    else candidate[first] - candidate[second]
+                    for first, second in variable_mapping
+                ]
+            )
+            if not np.allclose(candidate_original, original_solution, atol=eps):
+                alternate_solution = candidate
+                break
 
-            alt_solution = np.zeros(n)
-            alt_idx = 0
-            for i in range(n):
-                if i in free_vars:
-                    alt_solution[i] = alt_extended[alt_idx] - alt_extended[alt_idx + 1]
-                    alt_idx += 2
-                else:
-                    alt_solution[i] = alt_extended[alt_idx]
-                    alt_idx += 1
-            alt_solution[np.abs(alt_solution) < eps] = 0.0
+    if alternate_solution is not None:
+        alternate_original = np.asarray(
+            [
+                alternate_solution[first]
+                if second is None
+                else alternate_solution[first] - alternate_solution[second]
+                for first, second in variable_mapping
+            ]
+        )
+        alternate_value = float(np.dot(original_c, alternate_original))
+        report.add("\nНайдено альтернативное оптимальное решение:")
+        report.add("x** = (" + ", ".join(f"{value:g}" for value in alternate_solution) + ")")
+        report.add(f"F = {alternate_value:g}")
+    elif zero_delta_found:
+        report.add("\nОбнаружена нулевая оценка Δ, но другой допустимый вектор не найден.")
+    else:
+        report.add("\nАльтернативных оптимальных решений по нулевым оценкам Δ не обнаружено.")
 
-            report.add(f"\nВторое базовое решение x~ = ({', '.join(f'{val:g}' for val in alt_solution)})")
-            report.add("Тогда общее решение задаётся:")
-            report.add("x = α * x* + (1 - α) * x~, где α ∈ [0; 1]")
-
-    solution_matrix = np.matrix(solution.reshape(1, -1))
+    solution_matrix = np.matrix(original_solution.reshape(1, -1))
     if return_details:
-        augmented_A = A_augmented
         return (
             solution_matrix,
             basis,
-            tableau[-1, :total_variable_count].copy(),
-            augmented_A,
+            tableau[-1, :variable_count].copy(),
+            initial_matrix,
         )
-    return solution_matrix
+    return np.matrix(solution.reshape(1, -1))
 
 
 def run_simplex_tableau(

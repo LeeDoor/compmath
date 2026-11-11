@@ -251,12 +251,15 @@ table {
 .transport-result-table {
   width: auto;
   max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .transport-result-table th,
 .transport-result-table td {
   min-width: 78px;
   padding: 6px;
+  text-align: left;
 }
 
 .transport-result-table .selected-cell {
@@ -264,12 +267,21 @@ table {
   color: #202020;
 }
 
+.result-heading {
+  text-align: left;
+}
+
+.algorithm-result,
+.transport-result {
+  text-align: left;
+}
+
 .algorithm-result-heading,
 .transport-result-heading {
   margin: 18px 0 8px;
   color: #294d37;
   font-size: 17px;
-  text-align: center;
+  text-align: left;
 }
 
 .algorithm-result-text {
@@ -277,14 +289,27 @@ table {
   line-height: 1.5;
 }
 
-.math-expression,
+.math-function,
 .equation-system-row {
   font-family: "Cambria Math", "Times New Roman", serif;
   font-size: 19px;
 }
 
-.math-expression {
-  text-align: center;
+.math-function-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.math-function {
+  width: max-content;
+  margin: 14px 0 20px;
+  padding: 14px 20px;
+  border: 1px solid #c9d4c8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 12px #243d2d12;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .equation-system-scroll {
@@ -297,7 +322,7 @@ table {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 14px auto 20px;
+  margin: 14px 0 20px;
   padding: 14px 20px;
   border: 1px solid #c9d4c8;
   border-radius: 10px;
@@ -323,17 +348,17 @@ table {
 }
 
 .equation-system-row var,
-.math-expression var {
+.math-function var {
   font-style: italic;
 }
 
 .equation-system-row sup,
-.math-expression sup {
+.math-function sup {
   font-size: 0.72em;
 }
 
 .equation-system-row sub,
-.math-expression sub {
+.math-function sub {
   font-size: 0.72em;
 }
 
@@ -344,12 +369,28 @@ table {
 .algorithm-result-table {
   width: auto;
   max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .algorithm-result-table th,
 .algorithm-result-table td {
   min-width: 78px;
   padding: 6px;
+  text-align: left;
+}
+
+.algorithm-result-table .pivot-column {
+  background: #dcefff;
+}
+
+.algorithm-result-table .pivot-row > th,
+.algorithm-result-table .pivot-row > td {
+  background: #fbe0e0;
+}
+
+.algorithm-result-table .pivot-row > .pivot-column {
+  background: #eadcf5;
 }
 
 .transport-solution {
@@ -363,7 +404,7 @@ table {
 
 .transport-solution .transport-result-heading {
   margin-top: 0;
-  text-align: center;
+  text-align: left;
 }
 
 .transport-solution-scroll {
@@ -379,6 +420,7 @@ table {
 .transport-solution-table td {
   min-width: 90px;
   padding: 10px;
+  text-align: left;
 }
 
 .transport-result-cost {
@@ -387,7 +429,7 @@ table {
   border-radius: 8px;
   background: #dce8da;
   color: #294d37;
-  text-align: center;
+  text-align: left;
   font-size: 18px;
 }
 
@@ -399,7 +441,7 @@ table {
 .transport-balance-notice {
   margin: 10px 0;
   color: #294d37;
-  text-align: center;
+  text-align: left;
   font-weight: bold;
 }
 

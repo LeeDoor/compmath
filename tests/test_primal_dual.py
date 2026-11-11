@@ -41,14 +41,35 @@ class PrimalDualTests(unittest.TestCase):
 
         self.assertEqual(len(delta_row.split()), 2)
 
+    def test_simplex_canonicalizes_and_flips_negative_rhs_equation(self):
+        solution, steps = solve_simplex([[-1]], [-2], [-1])
+
+        self.assertEqual(solution.tolist(), [[2.0, 0.0]])
+        self.assertIn("ПРИВЕДЕНИЕ К КАНОНИЧЕСКОЙ ФОРМЕ", steps)
+        self.assertIn("Уравнение 1 умножено на -1.", steps)
+        self.assertIn("x1 - x2 = 2", steps)
+
+    def test_simplex_uses_canonical_signs_and_free_variable_substitution(self):
+        solution, steps = solve_simplex(
+            [[1]],
+            [2],
+            [-1],
+            constraint_signs=[">="],
+            variable_constraints=["free"],
+        )
+
+        self.assertEqual(solution.tolist(), [[2.0, 0.0, 0.0]])
+        self.assertIn("x'1 - x''1 - x2 = 2", steps)
+        self.assertNotIn("Найдено альтернативное оптимальное решение", steps)
+
     def test_artificial_basis_returns_steps_without_printing(self):
         output = StringIO()
         with redirect_stdout(output):
             solution, steps = solve_artificial_basis([[1]], [2], [1])
 
         np.testing.assert_array_equal(solution, [[2]])
-        self.assertIn("ЭТАП 1. ВСПОМОГАТЕЛЬНАЯ ЗАДАЧА", steps)
-        self.assertIn("ЭТАП 2. РЕШЕНИЕ ИСХОДНОЙ ЗАДАЧИ", steps)
+        self.assertIn("Приведение к канонической форме:", steps)
+        self.assertIn("ИТОГОВЫЙ РЕЗУЛЬТАТ", steps)
         self.assertEqual(output.getvalue(), "")
 
 

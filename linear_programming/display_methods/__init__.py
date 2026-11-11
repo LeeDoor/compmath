@@ -9,6 +9,7 @@ from .format_system_of_equations import (
     format_math_expression,
     format_system_of_equations,
 )
+from .format_math_function import format_math_function
 
 __all__ = [
     "display_augmented_matrix",
@@ -17,5 +18,6 @@ __all__ = [
     "display_min",
     "display_matrix",
     "format_math_expression",
+    "format_math_function",
     "format_system_of_equations",
 ]

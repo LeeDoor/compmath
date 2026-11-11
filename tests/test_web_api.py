@@ -71,6 +71,19 @@ class WebApiTests(unittest.TestCase):
         self.assertIn('data-resize-url="/task/simplex"', page)
         self.assertNotIn("Обновить систему", page)
 
+    def test_numeric_fields_default_to_zero(self):
+        linear_page = render_task_page(TASK_BY_ID["simplex"], {})
+        transport_page = render_task_page(TASK_BY_ID["transport"], {})
+        optimality_page = render_task_page(TASK_BY_ID["optimality"], {})
+
+        self.assertIn('name="a_0_0" value="0"', linear_page)
+        self.assertIn('name="b_0" value="0"', linear_page)
+        self.assertIn('name="c_0" value="0"', linear_page)
+        self.assertIn('name="cost_0_0" value="0"', transport_page)
+        self.assertIn('name="supply_0" value="0"', transport_page)
+        self.assertIn('name="demand_0" value="0"', transport_page)
+        self.assertIn('name="solution_0" value="0"', optimality_page)
+
     def test_task_forms_use_distinct_storage_keys(self):
         simplex_page = render_task_page(TASK_BY_ID["simplex"], {})
         canonical_page = render_task_page(TASK_BY_ID["canonical_form"], {})
@@ -175,6 +188,7 @@ class WebApiTests(unittest.TestCase):
 
         self.assertTrue(result.formatted_systems)
         self.assertIn('<div class="equation-system"', page)
+        self.assertIn('<div class="math-function"', page)
         self.assertIn(
             '<h3 class="algorithm-result-heading">'
             "СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1</h3>",
@@ -183,6 +197,104 @@ class WebApiTests(unittest.TestCase):
         self.assertIn('<table class="algorithm-result-table">', page)
         self.assertIn('<th scope="col">Базис</th>', page)
         self.assertNotIn("<textarea", page)
+
+    def test_simplex_pivot_is_highlighted_and_basis_is_listed(self):
+        result = solve_task(
+            {
+                "task_id": "simplex",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+            }
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertIn("Базисные переменные: x2", result)
+        self.assertIn('class="pivot-column"', page)
+        self.assertIn('class="pivot-row"', page)
+        self.assertEqual(page.count('<table class="algorithm-result-table">'), 2)
+        self.assertNotIn("Из базиса выходит", result)
+        self.assertNotIn("Система уравнений текущего базиса", result)
+
+    def test_function_expressions_use_html_math_card(self):
+        page = render_task_page(
+            TASK_BY_ID["standard_form"],
+            {},
+            result="f(x) = 2*x1 - x2 -> max",
+        )
+
+        self.assertIn('<div class="math-function"', page)
+        self.assertIn('<var>x</var><sub>1</sub>', page)
+        self.assertIn('<var>x</var><sub>2</sub>', page)
+
+    def test_function_outputs_use_math_card_across_html_tasks(self):
+        requests = [
+            {
+                "task_id": "simplex",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+            },
+            {
+                "task_id": "primal_dual",
+                "A": [[1, 1], [1, 0], [0, 1]],
+                "b": [4, 2, 3],
+                "c": [3, 2],
+            },
+            {
+                "task_id": "dual_simplex",
+                "A": [[1, 1]],
+                "b": [2],
+                "c": [-2, -1],
+                "constraint_signs": [">="],
+            },
+            {
+                "task_id": "optimality",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+                "solution": [2],
+            },
+            {
+                "task_id": "canonical_form",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+            },
+            {
+                "task_id": "standard_form",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+            },
+        ]
+
+        for request in requests:
+            with self.subTest(task=request["task_id"]):
+                result = solve_task(request)
+                page = render_task_page(
+                    TASK_BY_ID[request["task_id"]],
+                    {},
+                    result=result,
+                )
+                self.assertIn('<div class="math-function"', page)
+
+    def test_simplex_normalized_system_uses_math_html_formatter(self):
+        result = solve_task(
+            {
+                "task_id": "simplex",
+                "A": [[-1]],
+                "b": [-2],
+                "c": [-1],
+            }
+        )
+        page = render_task_page(TASK_BY_ID["simplex"], {}, result=result)
+
+        self.assertIn("Уравнение 1 умножено на -1.", result)
+        self.assertTrue(result.formatted_systems)
+        self.assertIn('<div class="equation-system"', page)
+        self.assertGreaterEqual(page.count('<div class="equation-system"'), 2)
+        self.assertIn("Система после нормализации b", page)
 
     def test_linear_equation_system_uses_math_html_formatting(self):
         result = "\n".join(
@@ -259,6 +371,8 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertIn('<div class="equation-system"', page)
         self.assertIn('<table class="algorithm-result-table">', page)
+        self.assertIn('class="pivot-column"', page)
+        self.assertIn('class="pivot-row"', page)
         self.assertNotIn("<textarea", page)
 
     def test_form_result_text_uses_html_and_escapes_contents(self):
