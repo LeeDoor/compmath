@@ -183,6 +183,15 @@ def _solve_artificial_basis_impl(
             + ", ".join(artificial_names)
             + "."
         )
+        artificial_equations = [
+            f"{format_equation(row, variable_names)} = {value:g}"
+            for row, value in zip(A_phase_one, b_can)
+        ]
+        report.add_formatted_system(
+            artificial_equations,
+            format_system_of_equations(artificial_equations),
+            heading="Система в МИБ:",
+        )
         report.add(
             "\nПЕРВАЯ ФАЗА: МАКСИМИЗАЦИЯ ОТРИЦАТЕЛЬНОЙ СУММЫ "
             "ИСКУССТВЕННЫХ ПЕРЕМЕННЫХ"

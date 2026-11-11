@@ -533,6 +533,7 @@ def _render_algorithm_result(
             text.startswith("Система уравнений")
             or text.startswith("Система после приведения")
             or text.startswith("Система после нормализации")
+            or text.startswith("Система в МИБ")
             or text in ("Ограничения", "Добавляем базисные переменные")
         )
 

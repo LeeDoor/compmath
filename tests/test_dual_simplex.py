@@ -60,7 +60,7 @@ class DualSimplexTests(unittest.TestCase):
             line for line in initial_table.splitlines()
             if line.strip().startswith("Δ")
         )
-        self.assertEqual(len(delta_row.split()), 3)
+        self.assertEqual(len(delta_row.split()), 4)
 
     def test_nonnegative_basic_rhs_requests_regular_simplex(self):
         result, output = self.run_solver([[1]], [4], [3])

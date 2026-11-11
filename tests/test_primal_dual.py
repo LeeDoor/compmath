@@ -39,7 +39,11 @@ class PrimalDualTests(unittest.TestCase):
             line for line in steps.splitlines() if line.strip().startswith("Δ")
         )
 
-        self.assertEqual(len(delta_row.split()), 2)
+        cells = delta_row.split()
+        self.assertEqual(len(cells), 3)
+        self.assertEqual(cells[0], "Δ")
+        self.assertEqual(cells[1], "1")
+        self.assertEqual(cells[2], "0")
 
     def test_simplex_canonicalizes_and_flips_negative_rhs_equation(self):
         solution, steps = solve_simplex([[-1]], [-2], [-1])
@@ -89,6 +93,18 @@ class PrimalDualTests(unittest.TestCase):
         self.assertIn("Искусственные переменные удалены из таблицы.", steps)
         self.assertIn("ПЕРЕХОД К ИСХОДНОЙ ЦЕЛЕВОЙ ФУНКЦИИ", steps)
         self.assertIn("СИМПЛЕКС-МЕТОД. ИТЕРАЦИЯ №1", steps)
+
+    def test_artificial_basis_outputs_system_after_adding_artificial(self):
+        _, steps = solve_artificial_basis(
+            [[1], [1]],
+            [1, 3],
+            [1],
+            constraint_signs=[">=", "<="],
+        )
+
+        self.assertIn("Система в МИБ:", steps)
+        self.assertIn("x1 - x2 + w1 = 1", steps)
+        self.assertIn("x1 + x3 = 3", steps)
 
     def test_artificial_basis_normalizes_rhs_after_canonicalization(self):
         solution, steps = solve_artificial_basis(
