@@ -820,20 +820,13 @@ def render_task_page(
     if error:
         form.append(f'<p class="error">{html.escape(error)}</p>')
     if result is not None:
-        clean_result = _ANSI_ESCAPE.sub("", result)
         form.append('<h2 class="result-heading">Результат</h2>')
         if task_id == "transport":
             form.append(_render_transport_result(result))
-        elif task_id == "artificial_basis":
-            form.append(
-                '<textarea readonly rows="18" cols="90">'
-                + html.escape(clean_result)
-                + "</textarea>"
-            )
         else:
             form.append(
                 _render_algorithm_result(
-                    clean_result,
+                    result,
                     getattr(result, "formatted_systems", ()),
                     getattr(result, "formatted_functions", ()),
                     getattr(result, "simplex_table_styles", ()),
