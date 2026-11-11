@@ -13,7 +13,6 @@ def format_vector(values, prefix):
     return ", ".join(parts)
 
 def format_expression(row, var_names):
-    """Красиво форматирует строку, пропуская нули и правильно ставя знаки."""
     terms = []
     for coef, name in zip(row, var_names):
         if abs(coef) < 1e-9:
