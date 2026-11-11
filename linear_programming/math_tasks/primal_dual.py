@@ -108,26 +108,55 @@ def _solve_primal_dual_impl(A: npt.ArrayLike,
 
 
 
+    mib_duals = None
+    simplex_report = StepReport()
     try:
-
         x, basis, delta, A_simplex = _solve_simplex_impl(
             A_np, b_np, c_np, sense, 
             constraint_signs=constraint_signs, 
             variable_constraints=variable_constraints,
-            report=report,
+            report=simplex_report,
             return_details=True
         )
     except ValueError as e:
-        return f"\nОШИБКА РЕШЕНИЯ: {e}"
-    
-    if A_simplex.shape[1] > len(c_np):
-        n_slack = A_simplex.shape[1] - len(c_np)
-        c_simplex = np.concatenate([c_np, np.zeros(n_slack)])
-    else:
-        c_simplex = c_np
+        if str(e) != "Нет допустимого начального базиса. Используйте МИБ.":
+            report.extend(simplex_report)
+            return f"\nОШИБКА РЕШЕНИЯ: {e}"
 
-    y1=solution_inverse_matrix(A_simplex, c_simplex, basis)
-    y2=solution_from_delta(A_simplex, c_simplex, basis, delta)
+        from .artificial_basis import _solve_artificial_basis_impl
+
+        report.add(
+            "\nСимплекс-метод не смог найти начальный базис. "
+            "Начинаем использовать метод искусственного базиса (МИБ)."
+        )
+        try:
+            x, y1, y2 = _solve_artificial_basis_impl(
+                A_np,
+                b_np,
+                c_np,
+                sense,
+                constraint_signs,
+                variable_constraints,
+                report=report,
+                return_duals=True,
+            )
+        except ValueError as mib_error:
+            return f"\nОШИБКА РЕШЕНИЯ: {mib_error}"
+        mib_duals = (y1, y2)
+    else:
+        report.extend(simplex_report)
+    
+    if mib_duals is not None:
+        y1, y2 = mib_duals
+    else:
+        if A_simplex.shape[1] > len(c_np):
+            n_slack = A_simplex.shape[1] - len(c_np)
+            c_simplex = np.concatenate([c_np, np.zeros(n_slack)])
+        else:
+            c_simplex = c_np
+
+        y1 = solution_inverse_matrix(A_simplex, c_simplex, basis)
+        y2 = solution_from_delta(A_simplex, c_simplex, basis, delta)
 
     x = np.asarray(x).reshape(-1)
     f_val = c_np @ x
