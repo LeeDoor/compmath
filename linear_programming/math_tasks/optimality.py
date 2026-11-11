@@ -3,7 +3,7 @@
 import numpy as np
 import numpy.typing as npt
 from ..problem import LinearProblem
-from .standard_form import to_standard_form, format_equation
+from .standard_form import format_equation
 from .primal_dual import format_vector, build_dual
 
 
@@ -26,22 +26,11 @@ def check_optimality(
 
     result = ["Проверка на оптимальность: "]
 
-    result.append("1) Приводим задачу к стандартной форме: \n")
     
-    std_text, A_s, b_s, c_s, x_s, var_names = to_standard_form(
-        A, b, c, 
-        problem.sense, 
-        constraint_signs, 
-        variable_constraints, 
-        x=x, 
-        return_data=True
-    )
-    result.append(std_text)
-    
-    m_s, n_s = A_s.shape
+    m_s, n_s = A.shape
     y_names = [f"y{i+1}" for i in range(m_s)]
     result.append("\n Построение двойственной задачи:")
-    A_dual, b_dual, c_dual, sense_dual = build_dual(A_s, b_s, c_s, "max")
+    A_dual, b_dual, c_dual, sense_dual = build_dual(A, b, c, "max")
     
     result.append(f"  g(y) = {format_equation(c_dual.flatten(), y_names)} -> {sense_dual}")
     for j in range(n_s):
@@ -53,8 +42,8 @@ def check_optimality(
         result.append(f"     y{i+1} >= 0")
 
     result.append("\nСтроим множества Jx и Ix:")
-    Jx = [j for j in range(n_s) if x_s[j] > 1e-9]
-    Ix = [i for i in range(m_s) if A_s[i] @ x_s < b_s[i]- 1e-9]
+    Jx = [j for j in range(n_s) if x[j] > 1e-9]
+    Ix = [i for i in range(m_s) if A[i] @ x < b[i]- 1e-9]
     
     result.append(f"   Jx = {{ {', '.join(f'x{j+1}' for j in Jx) or 'пусто'} }} (переменные > 0)")
     result.append(f"   Ix = {{ {', '.join(f'огр.{i+1}' for i in Ix) or 'пусто'} }} (ограничения строго < b)")
@@ -62,9 +51,9 @@ def check_optimality(
     rows, rhs = [], []
     
     for j in Jx:
-        rows.append(A_s[:, j])
-        rhs.append(c_s[j])
-        result.append(f"   (A^{j+1}, y) = {c_s[j]:g}  =>  {format_equation(A_s[:, j], y_names)} = {c_s[j]:g}")
+        rows.append(A[:, j])
+        rhs.append(c[j])
+        result.append(f"   (A^{j+1}, y) = {c[j]:g}  =>  {format_equation(A[:, j], y_names)} = {c[j]:g}")
     for i in Ix:
         vec = np.zeros(m_s)
         vec[i] = 1.0
@@ -96,8 +85,8 @@ def check_optimality(
         result.append("\nВЫВОД: план НЕ является оптимальным.")
         return "\n".join(result)
         
-    dual_lhs = A_s.T @ y_approx
-    if np.any(dual_lhs < c_s-1e-9):
+    dual_lhs = A.T @ y_approx
+    if np.any(dual_lhs < c-1e-9):
         result.append("   Ошибка: не выполняется A^T y >= c.")
         result.append("\nВЫВОД: план НЕ является оптимальным.")
         return "\n".join(result)
