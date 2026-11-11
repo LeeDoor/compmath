@@ -343,12 +343,34 @@ class WebApiTests(unittest.TestCase):
             page,
         )
 
-    def test_artificial_basis_keeps_textarea(self):
+    def test_artificial_basis_uses_html_result_renderer(self):
         page = render_task_page(
             TASK_BY_ID["artificial_basis"], {}, result="Результат"
         )
 
-        self.assertIn("<textarea readonly", page)
+        self.assertIn('<section class="algorithm-result">', page)
+        self.assertNotIn("<textarea", page)
+
+    def test_artificial_basis_canonical_result_uses_html_formatters(self):
+        result = solve_task(
+            {
+                "task_id": "artificial_basis",
+                "A": [[1]],
+                "b": [2],
+                "c": [1],
+                "constraint_signs": ["="],
+            }
+        )
+        page = render_task_page(
+            TASK_BY_ID["artificial_basis"], {}, result=result
+        )
+
+        self.assertTrue(result.formatted_systems)
+        self.assertTrue(result.formatted_functions)
+        self.assertIn('<div class="equation-system"', page)
+        self.assertIn('<div class="math-function"', page)
+        self.assertNotIn("Приведение к канонической форме:", page)
+        self.assertNotIn("1) Умножаем", page)
 
     def test_dual_simplex_result_uses_html_table(self):
         result = solve_task(
