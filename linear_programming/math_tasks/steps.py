@@ -50,6 +50,12 @@ class StepReport:
     def add(self, text: object = "", *, end: str = "\n") -> None:
         self._parts.append(f"{text}{end}")
 
+    def extend(self, other: "StepReport") -> None:
+        self._parts.extend(other._parts)
+        self._formatted_systems.extend(other._formatted_systems)
+        self._formatted_functions.extend(other._formatted_functions)
+        self._simplex_table_styles.extend(other._simplex_table_styles)
+
     def add_formatted_system(
         self,
         equations: list[str],

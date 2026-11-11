@@ -93,13 +93,14 @@ class WebApiTests(unittest.TestCase):
         self.assertIn('data-storage-key="canonical_form"', canonical_page)
         self.assertIn('data-storage-key="transport"', transport_page)
 
-    def test_constraint_controls_are_not_added_to_optimality_task(self):
+    def test_constraint_controls_are_added_to_optimality_task(self):
         page = render_task_page(
             TASK_BY_ID["optimality"],
             {"variables": "2", "constraints": "2"},
         )
-        self.assertNotIn('name="sign_0"', page)
-        self.assertNotIn('name="x_constraint_0"', page)
+        self.assertIn('name="sign_0"', page)
+        self.assertIn('name="x_constraint_0"', page)
+        self.assertIn('data-variable-index="0"', page)
 
     def test_transport_form_uses_compact_table_class(self):
         page = render_task_page(TASK_BY_ID["transport"], {})
@@ -442,6 +443,46 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["constraint_signs"], [">=", "="])
         self.assertEqual(
             payload["variable_constraints"], ["free", "nonnegative"]
+        )
+
+    def test_optimality_form_payload_includes_constraint_choices(self):
+        payload = _form_payload(
+            {
+                "task_id": "optimality",
+                "variables": "1",
+                "constraints": "2",
+                "a_0_0": "1",
+                "a_1_0": "1",
+                "b_0": "1",
+                "b_1": "3",
+                "c_0": "1",
+                "sense": "max",
+                "solution_0": "3",
+                "sign_0": ">=",
+                "sign_1": "<=",
+                "x_constraint_0": "free",
+            }
+        )
+        self.assertEqual(payload["constraint_signs"], [">=", "<="])
+        self.assertEqual(payload["variable_constraints"], ["free"])
+
+    def test_optimality_solver_receives_constraint_choices(self):
+        payload = {
+            "task_id": "optimality",
+            "A": [[1], [1]],
+            "b": [1, 3],
+            "c": [1],
+            "sense": "max",
+            "solution": [3],
+            "constraint_signs": [">=", "<="],
+            "variable_constraints": ["free"],
+        }
+        with patch("server.check_optimality", return_value="result") as solver:
+            self.assertEqual(solve_task(payload), "result")
+        args, _ = solver.call_args
+        self.assertEqual(
+            args[1:],
+            ([3.0], [">=", "<="], ["free"]),
         )
 
     def test_solver_receives_constraint_arguments(self):

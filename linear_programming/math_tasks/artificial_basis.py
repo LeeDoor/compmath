@@ -79,7 +79,8 @@ def _solve_artificial_basis_impl(
     variable_constraints: list[VariableConstraint] | None = None,
     *,
     report: StepReport,
-) -> np.matrix:
+    return_duals: bool = False,
+) -> np.matrix | tuple[np.matrix, np.ndarray, np.ndarray]:
     eps = 1e-9
     problem = create_problem(A, b, c, sense)
     A_original = np.asarray(problem.A, dtype=float)
@@ -134,10 +135,13 @@ def _solve_artificial_basis_impl(
     )
 
     negative_rhs_rows = np.flatnonzero(b_can < -eps)
+    retained_rows = list(range(len(b_can)))
+    row_signs = [1.0] * len(b_can)
     if len(negative_rhs_rows):
         for row in negative_rhs_rows:
             A_can[row, :] *= -1
             b_can[row] *= -1
+            row_signs[row] = -1.0
     b_can[np.abs(b_can) < eps] = 0.0
     A_can[np.abs(A_can) < eps] = 0.0
     if len(negative_rhs_rows):
@@ -182,6 +186,15 @@ def _solve_artificial_basis_impl(
             "\nНачальный базис неполный. Добавлены искусственные переменные: "
             + ", ".join(artificial_names)
             + "."
+        )
+        artificial_equations = [
+            f"{format_equation(row, variable_names)} = {value:g}"
+            for row, value in zip(A_phase_one, b_can)
+        ]
+        report.add_formatted_system(
+            artificial_equations,
+            format_system_of_equations(artificial_equations),
+            heading="Система в МИБ:",
         )
         report.add(
             "\nПЕРВАЯ ФАЗА: МАКСИМИЗАЦИЯ ОТРИЦАТЕЛЬНОЙ СУММЫ "
@@ -254,6 +267,8 @@ def _solve_artificial_basis_impl(
                 )
                 tableau = np.delete(tableau, row_idx, axis=0)
                 basis.pop(row_idx)
+                retained_rows.pop(row_idx)
+                row_signs.pop(row_idx)
 
         report.add("\nИскусственные переменные удалены из таблицы.")
         keep_columns = [
@@ -303,7 +318,24 @@ def _solve_artificial_basis_impl(
     report.add("x* = (" + ", ".join(f"{value:g}" for value in solution) + ")")
     report.add(f"F{'max' if sense == 'max' else 'min'} = {objective_value:g}")
 
-    return np.matrix(solution.reshape(1, -1))
+    solution_matrix = np.matrix(solution.reshape(1, -1))
+    if not return_duals:
+        return solution_matrix
+
+    basis_matrix = A_can[retained_rows][:, basis]
+    canonical_dual_system = np.linalg.solve(basis_matrix.T, c_can[basis])
+    canonical_dual_inverse = c_can[basis] @ np.linalg.inv(basis_matrix)
+    objective_sign = 1.0 if sense == "max" else -1.0
+    dual_system = np.zeros(len(b_original))
+    dual_inverse = np.zeros(len(b_original))
+    for row, original_row in enumerate(retained_rows):
+        multiplier = row_signs[row] * objective_sign
+        dual_system[original_row] = canonical_dual_system[row] * multiplier
+        dual_inverse[original_row] = canonical_dual_inverse[row] * multiplier
+    dual_system[np.abs(dual_system) < eps] = 0.0
+    dual_inverse[np.abs(dual_inverse) < eps] = 0.0
+
+    return solution_matrix, dual_system, dual_inverse
 
 
 def solve_artificial_basis(

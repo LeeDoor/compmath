@@ -50,6 +50,7 @@ def append_simplex_table(
     report.add(
         f"{'Δ':>8}"
         + "".join(f"{tableau[-1, column]:12.4g}" for column in nonbasic)
+        + f"{tableau[-1, -1]:12.4g}"
     )
 
 

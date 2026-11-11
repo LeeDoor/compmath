@@ -38,6 +38,8 @@ def _validate_arguments(
     costs: npt.ArrayLike, supply: npt.ArrayLike, demand: npt.ArrayLike
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Convert entered data to arrays and reject negative quantities."""
+    # Приводим входы к числовым массивам единой формы; отрицательные запасы и
+    # потребности не допускают допустимого плана перевозок.
     cost_matrix = np.asarray(costs, dtype=float)
     supplies = np.asarray(supply, dtype=float).reshape(-1)
     demands = np.asarray(demand, dtype=float).reshape(-1)
@@ -59,8 +61,13 @@ def _close_problem(
     total_supply = float(supply.sum())
     total_demand = float(demand.sum())
 
+    # Для допустимого плана общий объём отправок должен совпадать с объёмом
+    # потребностей. Несбалансированную задачу превращаем в закрытую добавлением
+    # фиктивного участника с нулевыми тарифами.
     if not np.isclose(total_supply, total_demand, rtol=_TOLERANCE, atol=_TOLERANCE):
         if total_supply > total_demand:
+            # Излишек запасов отправляется фиктивному потребителю; это не меняет
+            # стоимость реальных перевозок и позволяет распределить весь запас.
             difference = total_supply - total_demand
             costs = np.column_stack((costs, np.zeros(costs.shape[0])))
             demand = np.append(demand, difference)
@@ -70,6 +77,8 @@ def _close_problem(
                 f"с потребностью {_format_number(difference)} и нулевыми тарифами."
             )
         else:
+            # Недостающий объём покрывает фиктивный склад с нулевыми тарифами,
+            # чтобы все реальные потребности вошли в сбалансированный план.
             difference = total_demand - total_supply
             costs = np.vstack((costs, np.zeros(costs.shape[1])))
             supply = np.append(supply, difference)
@@ -91,15 +100,20 @@ def _close_problem(
 def _add_zero_basic_cells(basic: np.ndarray) -> None:
     """Complete a degenerate basis without introducing a cycle."""
     rows, columns = basic.shape
+    # Базис транспортной задачи должен содержать rows + columns - 1 клеток.
+    # Представляем клетки как рёбра двудольного графа: строки — склады,
+    # столбцы — потребители. DSU помогает добавлять клетки без циклов.
     parent = list(range(rows + columns))
 
     def find(vertex: int) -> int:
+        # Сжатие путей ускоряет поиск компоненты связности.
         while parent[vertex] != vertex:
             parent[vertex] = parent[parent[vertex]]
             vertex = parent[vertex]
         return vertex
 
     def union(first: int, second: int) -> bool:
+        # Если вершины уже связаны, добавление ребра создало бы цикл.
         first_root = find(first)
         second_root = find(second)
         if first_root == second_root:
@@ -108,12 +122,16 @@ def _add_zero_basic_cells(basic: np.ndarray) -> None:
         return True
 
     basis_count = 0
+    # Положительные перевозки уже образуют часть базиса. В базис включаем только
+    # клетки, рёбра которых не замыкают цикл; остальные клетки не входят в дерево.
     for row, column in zip(*np.where(basic)):
         if union(int(row), rows + int(column)):
             basis_count += 1
         else:
             basic[row, column] = False
 
+    # Достраиваем лес до остовного дерева фиктивными нулевыми базисными клетками.
+    # Такое дополнение не меняет план перевозок, но делает потенциалы определимыми.
     for row in range(rows):
         for column in range(columns):
             if basis_count == rows + columns - 1:
@@ -130,24 +148,35 @@ def _northwest_corner(
     allocations = np.zeros((len(supply), len(demand)))
     remaining_supply = supply.copy()
     remaining_demand = demand.copy()
+    # Начинаем с северо-западной клетки (верхняя левая) и последовательно
+    # перемещаемся вправо или вниз по мере исчерпания потребности/запаса.
     row = column = 0
 
     while row < len(remaining_supply) and column < len(remaining_demand):
+        # Максимальная допустимая перевозка в текущую клетку — меньшая из
+        # оставшегося запаса склада и оставшейся потребности потребителя.
         amount = min(remaining_supply[row], remaining_demand[column])
         allocations[row, column] += amount
         remaining_supply[row] -= amount
         remaining_demand[column] -= amount
 
+        # Округляем очень малые остатки до нуля, чтобы ошибки float не мешали
+        # определять, какую строку или колонку таблицы закрыть.
         if np.isclose(remaining_supply[row], 0, atol=_TOLERANCE):
             remaining_supply[row] = 0
         if np.isclose(remaining_demand[column], 0, atol=_TOLERANCE):
             remaining_demand[column] = 0
 
+        # Если исчерпан запас, переходим к следующему складу; если закрыта
+        # потребность — к следующему потребителю. При равенстве сдвигаемся по
+        # обоим измерениям, а недостающие нулевые базисные клетки добавим ниже.
         if remaining_supply[row] == 0:
             row += 1
         if remaining_demand[column] == 0:
             column += 1
 
+    # Положительные перевозки задают базисные клетки. При вырожденном плане
+    # их может быть меньше rows + columns - 1, поэтому добавляем нулевые клетки.
     basic = allocations > 0
     _add_zero_basic_cells(basic)
     return allocations, basic
@@ -160,8 +189,13 @@ def _calculate_potentials(
     rows, columns = costs.shape
     row_potentials = np.full(rows, np.nan)
     column_potentials = np.full(columns, np.nan)
+    # Потенциалы не меняются при прибавлении константы ко всем u и вычитании её
+    # из всех v, поэтому фиксируем один из них для однозначного распространения.
     row_potentials[0] = 0
 
+    # В каждой базисной клетке выполняется u[i] + v[j] = c[i,j].
+    # Многократно применяем эти равенства, пока не найдём потенциалы всех строк
+    # и столбцов, соединённых базисными клетками.
     changed = True
     while changed:
         changed = False
@@ -179,6 +213,9 @@ def _calculate_potentials(
                 row_potentials[row] = costs[row, column] - column_potentials[column]
                 changed = True
 
+    # Для свободной клетки Δc = c[i,j] - u[i] - v[j]. В задаче минимизации
+    # неотрицательные оценки означают, что ввод этой клетки в план не уменьшит
+    # стоимость. Для базисных клеток оценка равна нулю по построению.
     reduced_costs = costs - (
         row_potentials[:, np.newaxis] + column_potentials[np.newaxis, :]
     )
@@ -189,6 +226,9 @@ def _calculate_potentials(
 def _find_cycle(basic: np.ndarray, entering: tuple[int, int]) -> list[tuple[int, int]]:
     """Find the unique cycle formed by adding an entering cell to the basis tree."""
     rows, columns = basic.shape
+    # Базисные клетки задают остовное дерево между вершинами-строками и
+    # вершинами-столбцами. Добавление свободной входящей клетки замыкает ровно
+    # один цикл; ищем в дереве путь между её концами.
     start = entering[0]
     target = rows + entering[1]
     adjacency: list[list[tuple[int, tuple[int, int]]]] = [
@@ -216,6 +256,7 @@ def _find_cycle(basic: np.ndarray, entering: tuple[int, int]) -> list[tuple[int,
         path.append(cell)
         vertex = previous
     path.reverse()
+    # Входящая клетка получает знак «+», далее знаки на цикле чередуются.
     return [entering, *reversed(path)]
 
 
@@ -223,6 +264,9 @@ def _select_entering_cell(
     reduced_costs: np.ndarray, basic: np.ndarray
 ) -> tuple[int, int] | None:
     """Choose the free cell with the most negative reduced cost."""
+    # В минимизационной задаче отрицательная оценка показывает, что включение
+    # клетки позволяет уменьшить стоимость. Выбираем наиболее отрицательную;
+    # если таких клеток нет, текущий допустимый план оптимален.
     candidates = np.where(~basic, reduced_costs, np.inf)
     row, column = np.unravel_index(np.argmin(candidates), candidates.shape)
     if candidates[row, column] >= -_TOLERANCE:
@@ -238,8 +282,12 @@ def _redistribute(
 ) -> float:
     """Adjust shipments around the cycle and update the degenerate basis."""
     minus_cells = cycle[1::2]
+    # Перевозка в клетках «−» уменьшается; чтобы ни одна не стала отрицательной,
+    # величину шага θ выбираем равной минимальной перевозке среди этих клеток.
     amount = min(allocations[row, column] for row, column in minus_cells)
 
+    # Прибавляем θ в клетках «+» и вычитаем θ в клетках «−». Суммы в каждой
+    # строке и колонке сохраняются, а стоимость плана меняется по оценке цикла.
     for index, (row, column) in enumerate(cycle):
         allocations[row, column] += amount if index % 2 == 0 else -amount
         if np.isclose(allocations[row, column], 0, atol=_TOLERANCE):
@@ -250,6 +298,9 @@ def _redistribute(
         for cell in minus_cells
         if allocations[cell] == 0
     ]
+    # Хотя несколько клеток «−» могут обнулиться одновременно, из цикла
+    # достаточно удалить одну. Выбор клетки с наибольшим тарифом задаёт
+    # детерминированное правило разрешения вырожденного шага.
     leaving = max(leaving_candidates, key=lambda cell: costs[cell])
     basic[cycle[0]] = True
     basic[leaving] = False
@@ -436,6 +487,8 @@ def _solve_transport_impl(
     report: StepReport,
 ) -> np.matrix:
     """Find a minimum-cost transportation plan using the lecture's potentials method."""
+    # Подготовка: преобразуем входы к числам, балансируем задачу и строим
+    # допустимый начальный план правилом северо-западного угла.
     costs, supply, demand = _validate_arguments(costs, supply, demand)
     problem = _close_problem(costs, supply, demand, report)
     allocations, basic = _northwest_corner(problem.supply, problem.demand)
@@ -443,11 +496,16 @@ def _solve_transport_impl(
         problem, allocations, "Шаг 1. Метод северо-западного угла", report
     )
 
+    # Начальный план уже выведен как шаг 1, поэтому первая проверка потенциалов
+    # и последующие улучшения нумеруются начиная со шага 2.
     iteration = 2
     while True:
+        # На текущем базисе восстанавливаем потенциалы и считаем оценки всех
+        # свободных клеток. Они указывают, можно ли удешевить план.
         potentials = _calculate_potentials(problem.costs, basic)
         entering = _select_entering_cell(potentials.reduced_costs, basic)
         if entering is None:
+            # Все оценки неотрицательны: условие оптимальности выполнено.
             _display_potential_step(
                 iteration,
                 problem,
@@ -459,6 +517,9 @@ def _solve_transport_impl(
             )
             break
 
+        # Выбранная свободная клетка входит в базис. Добавление её к базисному
+        # дереву задаёт цикл, по которому можно изменить перевозки, не нарушив
+        # балансы складов и потребителей.
         cycle = _find_cycle(basic, entering)
         _display_potential_step(
             iteration,
@@ -470,10 +531,13 @@ def _solve_transport_impl(
             report,
             cycle,
         )
+        # Перераспределяем поток по циклу и удаляем из базиса клетку, ставшую
+        # нулевой; затем на следующей итерации пересчитываем потенциалы.
         amount = _redistribute(allocations, basic, problem.costs, cycle)
         report.add(f"Величина перераспределения Δx={_format_number(amount)}.")
         iteration += 1
 
+    # После достижения оптимальности суммируем тариф × объём каждой перевозки.
     _display_solution(problem, allocations, report)
     return np.matrix(allocations)
 

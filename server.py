@@ -81,6 +81,7 @@ CONSTRAINT_TASKS = frozenset(
         "artificial_basis",
         "canonical_form",
         "standard_form",
+        "optimality",
     }
 )
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -202,8 +203,28 @@ def solve_task(payload: Any) -> str:
         solution = _validate_vector(payload.get("solution"), "solution")
         if len(solution) != len(objective):
             raise ValueError("Длина вектора решения должна совпадать с числом неизвестных.")
+        constraint_signs = _validate_choices(
+            payload.get("constraint_signs"),
+            "constraint_signs",
+            {"<=", ">=", "="},
+            len(matrix),
+            "<=",
+        )
+        variable_constraints = _validate_choices(
+            payload.get("variable_constraints"),
+            "variable_constraints",
+            {"nonnegative", "free"},
+            len(objective),
+            "nonnegative",
+        )
         problem = create_problem(matrix, right_hand_side, objective, sense)
-        return _run_solver(check_optimality, problem, solution)
+        return _run_solver(
+            check_optimality,
+            problem,
+            solution,
+            constraint_signs,
+            variable_constraints,
+        )
 
     solver_args: list[Any] = [matrix, right_hand_side, objective, sense]
     if task_id in CONSTRAINT_TASKS:
@@ -533,6 +554,7 @@ def _render_algorithm_result(
             text.startswith("Система уравнений")
             or text.startswith("Система после приведения")
             or text.startswith("Система после нормализации")
+            or text.startswith("Система в МИБ")
             or text in ("Ограничения", "Добавляем базисные переменные")
         )
 

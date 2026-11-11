@@ -19,10 +19,10 @@ def check_optimality(
     x = np.asarray(primal_solution, dtype=float).reshape(-1)
 
     m, n = A.shape
+    if len(x) != n:
+        raise ValueError("Длина вектора решения должна совпадать с числом неизвестных.")
     if constraint_signs is None: constraint_signs = ["<="] * m
     if variable_constraints is None: variable_constraints = ["nonnegative"] * n
-
-
 
     result = ["Проверка на оптимальность: "]
 
@@ -62,17 +62,40 @@ def check_optimality(
         result.append(f"   y{i+1} = 0")
 
     if not rows:
-        result.append("   Система пуста.")
-        return "\n".join(result)
+        result.append("   Система равенств пуста.")
 
-    M = np.array(rows)
-    v = np.array(rhs)
-    y_approx, residuals, _, _ = np.linalg.lstsq(M, v, rcond=None)
-    if len(residuals) > 0 and residuals[0] > 1e-7:
-        result.append("\n   Система ПРОТИВОРЕЧИВА.")
+    dual_rows = list(rows)
+    dual_rhs = list(rhs)
+    dual_signs = ["="] * len(rows)
+    for j in range(n_s):
+        dual_rows.append(A_s[:, j])
+        dual_rhs.append(c_s[j])
+        dual_signs.append(">=")
+
+    from .artificial_basis import _solve_artificial_basis_impl
+    from .steps import StepReport
+
+    try:
+        y_solution = _solve_artificial_basis_impl(
+            np.asarray(dual_rows),
+            np.asarray(dual_rhs),
+            np.zeros(m_s),
+            "max",
+            dual_signs,
+            ["nonnegative"] * m_s,
+            report=StepReport(),
+        )
+    except ValueError as error:
+        if not str(error).startswith("Задача несовместна"):
+            raise
+        result.append(
+            "\n   Нет двойственных переменных, удовлетворяющих "
+            "условиям дополнительной нежёсткости."
+        )
         result.append("\nВЫВОД: план НЕ является оптимальным.")
         return "\n".join(result)
-    
+
+    y_approx = np.asarray(y_solution, dtype=float).reshape(-1)
     y_approx[np.abs(y_approx) < 1e-7] = 0.0
    
     y_str = ", ".join(f"y{i+1} = {round(v, 6):g}" for i, v in enumerate(y_approx))
@@ -80,7 +103,7 @@ def check_optimality(
 
     result.append("\n Проверяем решения на двойственной задаче:")
     
-    if np.any(y_approx < -1e-9):
+    if np.any(y_approx < -tolerance):
         result.append("   Ошибка: некоторые y_i < 0.")
         result.append("\nВЫВОД: план НЕ является оптимальным.")
         return "\n".join(result)
